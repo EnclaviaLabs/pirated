@@ -7,6 +7,9 @@ bin/project-cache.jam
 # Ignore vim swap files.
 *.swp
 
+my_build
+my_build_ok
+
 # Ignore SCons support files.
 .sconsign.dblite
 
