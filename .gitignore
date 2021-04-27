@@ -3,6 +3,7 @@
 bin/boostbook_catalog.xml
 bin/config.log
 bin/project-cache.jam
+my_build/
 
 # Ignore vim swap files.
 *.swp
@@ -25,6 +26,9 @@ build
 .nih_c
 tags
 TAGS
+GTAGS
+GRTAGS
+GPATH
 bin/rippled
 Debug/*.*
 Release/*.*
@@ -33,6 +37,12 @@ Release/*.*
 *.gcno
 *.gcda
 *.gcov
+
+# Levelization checking
+Builds/levelization/results/rawincludes.txt
+Builds/levelization/results/paths.txt
+Builds/levelization/results/includes/
+Builds/levelization/results/includedby/
 
 # Ignore tmp directory.
 tmp

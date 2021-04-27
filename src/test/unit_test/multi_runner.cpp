@@ -32,7 +32,7 @@ namespace ripple {
 namespace test {
 
 extern void
-incPorts();
+incPorts(int times);
 
 namespace detail {
 
@@ -180,6 +180,22 @@ void
 multi_runner_base<IsParent>::inner::any_failed(bool v)
 {
     any_failed_ = any_failed_ || v;
+}
+
+template <bool IsParent>
+std::size_t
+multi_runner_base<IsParent>::inner::tests() const
+{
+    std::lock_guard l{m_};
+    return results_.total;
+}
+
+template <bool IsParent>
+std::size_t
+multi_runner_base<IsParent>::inner::suites() const
+{
+    std::lock_guard l{m_};
+    return results_.suites;
 }
 
 template <bool IsParent>
@@ -338,7 +354,9 @@ multi_runner_base<IsParent>::print_results(S& s)
 
 template <bool IsParent>
 void
-multi_runner_base<IsParent>::message_queue_send(MessageType mt, std::string const& s)
+multi_runner_base<IsParent>::message_queue_send(
+    MessageType mt,
+    std::string const& s)
 {
     // must use a mutex since the two "sends" must happen in order
     std::lock_guard l{inner_->m_};
@@ -347,16 +365,39 @@ multi_runner_base<IsParent>::message_queue_send(MessageType mt, std::string cons
 }
 
 template <bool IsParent>
+std::size_t
+multi_runner_base<IsParent>::tests() const
+{
+    return inner_->tests();
+}
+
+template <bool IsParent>
+std::size_t
+multi_runner_base<IsParent>::suites() const
+{
+    return inner_->suites();
+}
+
+template <bool IsParent>
+void
+multi_runner_base<IsParent>::add_failures(std::size_t failures)
+{
+    results results;
+    results.failed += failures;
+    add(results);
+    any_failed(failures != 0);
+}
+
+template <bool IsParent>
 constexpr const char* multi_runner_base<IsParent>::shared_mem_name_;
 template <bool IsParent>
 constexpr const char* multi_runner_base<IsParent>::message_queue_name_;
 
-}  // detail
+}  // namespace detail
 
 //------------------------------------------------------------------------------
 
-multi_runner_parent::multi_runner_parent()
-    : os_(std::cout)
+multi_runner_parent::multi_runner_parent() : os_(std::cout)
 {
     message_queue_thread_ = std::thread([this] {
         std::vector<char> buf(1 << 20);
@@ -382,7 +423,7 @@ multi_runner_parent::multi_runner_parent()
                     buf.data(), buf.size(), recvd_size, priority);
                 if (!recvd_size)
                     continue;
-                assert (recvd_size == 1);
+                assert(recvd_size == 1);
                 MessageType mt{*reinterpret_cast<MessageType*>(buf.data())};
 
                 this->message_queue_->receive(
@@ -444,6 +485,24 @@ multi_runner_parent::any_failed() const
     return multi_runner_base<true>::any_failed();
 }
 
+std::size_t
+multi_runner_parent::tests() const
+{
+    return multi_runner_base<true>::tests();
+}
+
+std::size_t
+multi_runner_parent::suites() const
+{
+    return multi_runner_base<true>::suites();
+}
+
+void
+multi_runner_parent::add_failures(std::size_t failures)
+{
+    multi_runner_base<true>::add_failures(failures);
+}
+
 //------------------------------------------------------------------------------
 
 multi_runner_child::multi_runner_child(
@@ -456,8 +515,7 @@ multi_runner_child::multi_runner_child(
     , print_log_{!quiet || print_log}
 {
     // incPort twice (2*jobIndex_) because some tests need two envs
-    for (std::size_t i = 0; i < 2 * job_index_; ++i)
-        test::incPorts();
+    test::incPorts(2 * job_index_);
 
     if (num_jobs_ > 1)
     {
@@ -498,6 +556,25 @@ multi_runner_child::~multi_runner_child()
     }
 
     add(results_);
+}
+
+std::size_t
+multi_runner_child::tests() const
+{
+    return results_.total;
+}
+
+std::size_t
+multi_runner_child::suites() const
+{
+    return results_.suites;
+}
+
+void
+multi_runner_child::add_failures(std::size_t failures)
+{
+    results_.failed += failures;
+    any_failed(failures != 0);
 }
 
 void
@@ -571,7 +648,7 @@ multi_runner_child::on_log(std::string const& msg)
 namespace detail {
 template class multi_runner_base<true>;
 template class multi_runner_base<false>;
-}
+}  // namespace detail
 
-}  // unit_test
-}  // beast
+}  // namespace test
+}  // namespace ripple

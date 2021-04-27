@@ -109,7 +109,7 @@ public:
     Json::Value
     getJson() const
     {
-        return ripple::getJson(*ledger_);
+        return ripple::getJson({*ledger_, {}});
     }
 
     /** The ledger instance.
@@ -119,5 +119,5 @@ public:
     */
     std::shared_ptr<Ledger const> ledger_;
 };
-}
+}  // namespace ripple
 #endif

@@ -20,18 +20,24 @@
 #include <ripple/app/main/Application.h>
 #include <ripple/app/misc/NetworkOPs.h>
 #include <ripple/json/json_value.h>
+#include <ripple/net/RPCErr.h>
+#include <ripple/protocol/ErrorCodes.h>
 #include <ripple/protocol/jss.h>
 #include <ripple/rpc/Context.h>
 
 namespace ripple {
 
-Json::Value doConsensusInfo (RPC::Context& context)
+Json::Value
+doConsensusInfo(RPC::JsonContext& context)
 {
-    Json::Value ret (Json::objectValue);
+    if (context.app.config().reporting())
+        return rpcError(rpcREPORTING_UNSUPPORTED);
 
-    ret[jss::info] = context.netOps.getConsensusInfo ();
+    Json::Value ret(Json::objectValue);
+
+    ret[jss::info] = context.netOps.getConsensusInfo();
 
     return ret;
 }
 
-} // ripple
+}  // namespace ripple

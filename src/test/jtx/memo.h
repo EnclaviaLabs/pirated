@@ -21,7 +21,6 @@
 #define RIPPLE_TEST_JTX_MEMO_H_INCLUDED
 
 #include <test/jtx/Env.h>
-#include <boost/optional.hpp>
 
 namespace ripple {
 namespace test {
@@ -40,12 +39,11 @@ private:
     std::string type_;
 
 public:
-    memo (std::string const& data,
+    memo(
+        std::string const& data,
         std::string const& format,
-            std::string const& type)
-        : data_(data)
-        , format_(format)
-        , type_(type)
+        std::string const& type)
+        : data_(data), format_(format), type_(type)
     {
     }
 
@@ -59,8 +57,7 @@ private:
     std::string s_;
 
 public:
-    memodata (std::string const& s)
-        : s_(s)
+    memodata(std::string const& s) : s_(s)
     {
     }
 
@@ -74,8 +71,7 @@ private:
     std::string s_;
 
 public:
-    memoformat (std::string const& s)
-        : s_(s)
+    memoformat(std::string const& s) : s_(s)
     {
     }
 
@@ -89,8 +85,7 @@ private:
     std::string s_;
 
 public:
-    memotype (std::string const& s)
-        : s_(s)
+    memotype(std::string const& s) : s_(s)
     {
     }
 
@@ -105,10 +100,8 @@ private:
     std::string type_;
 
 public:
-    memondata (std::string const& format,
-            std::string const& type)
-        : format_(format)
-        , type_(type)
+    memondata(std::string const& format, std::string const& type)
+        : format_(format), type_(type)
     {
     }
 
@@ -123,10 +116,8 @@ private:
     std::string type_;
 
 public:
-    memonformat (std::string const& data,
-            std::string const& type)
-        : data_(data)
-        , type_(type)
+    memonformat(std::string const& data, std::string const& type)
+        : data_(data), type_(type)
     {
     }
 
@@ -141,10 +132,8 @@ private:
     std::string format_;
 
 public:
-    memontype (std::string const& data,
-            std::string const& format)
-        : data_(data)
-        , format_(format)
+    memontype(std::string const& data, std::string const& format)
+        : data_(data), format_(format)
     {
     }
 
@@ -152,8 +141,8 @@ public:
     operator()(Env&, JTx& jt) const;
 };
 
-} // jtx
-} // test
-} // ripple
+}  // namespace jtx
+}  // namespace test
+}  // namespace ripple
 
 #endif

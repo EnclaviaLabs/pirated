@@ -19,7 +19,12 @@ Use `apt-get` to install the dependencies provided by the distribution
 
 ```
 $ apt-get update
-$ apt-get install -y gcc g++ wget git cmake protobuf-compiler libprotobuf-dev libssl-dev
+$ apt-get install -y gcc g++ wget git cmake pkg-config protobuf-compiler libprotobuf-dev libssl-dev
+```
+
+To build the software in reporting mode, install these additional dependencies:
+```
+$ apt-get install -y autoconf flex bison
 ```
 
 Advanced users can choose to install newer versions of gcc, or the clang compiler.
@@ -139,6 +144,7 @@ testing and running.
 * `-Dsan=thread` to enable the thread sanitizer with clang
 * `-Dsan=address` to enable the address sanitizer with clang
 * `-Dstatic=ON` to enable static linking library dependencies
+* `-Dreporting=ON` to build code neccessary for reporting mode (defaults to OFF)
 
 Several other infrequently used options are available - run `ccmake` or
 `cmake-gui` for a list of all options.

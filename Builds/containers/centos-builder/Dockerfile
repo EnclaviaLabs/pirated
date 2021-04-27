@@ -16,8 +16,8 @@ RUN chmod +x /tmp/centos_setup.sh && \
     chmod +x /tmp/extras.sh
 RUN /tmp/centos_setup.sh
 
-RUN /tmp/install_cmake.sh 3.15.2 /opt/local/cmake-3.15
-RUN ln -s /opt/local/cmake-3.15 /opt/local/cmake
+RUN /tmp/install_cmake.sh 3.16.1 /opt/local/cmake-3.16
+RUN ln -s /opt/local/cmake-3.16 /opt/local/cmake
 ENV PATH="/opt/local/cmake/bin:$PATH"
 # also install min supported cmake for testing
 RUN if [ "${CI_USE}" = true ] ; then /tmp/install_cmake.sh 3.9.0 /opt/local/cmake-3.9; fi
@@ -34,9 +34,6 @@ RUN source scl_source enable devtoolset-7 python27 && \
 # prep files for package building
 RUN mkdir -m 777 -p /opt/rippled_bld/pkg
 WORKDIR /opt/rippled_bld/pkg
-
-COPY packaging/rpm/rippled.spec ./
-COPY shared/update_sources.sh ./
 RUN mkdir -m 777 ./rpmbuild
 RUN mkdir -m 777 ./rpmbuild/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 

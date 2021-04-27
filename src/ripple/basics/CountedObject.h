@@ -21,6 +21,7 @@
 #define RIPPLE_BASICS_COUNTEDOBJECT_H_INCLUDED
 
 #include <atomic>
+#include <beast/type_name.h>
 #include <string>
 #include <utility>
 #include <vector>
@@ -31,62 +32,83 @@ namespace ripple {
 class CountedObjects
 {
 public:
-    static CountedObjects& getInstance () noexcept;
+    static CountedObjects&
+    getInstance() noexcept;
 
-    using Entry = std::pair <std::string, int>;
-    using List = std::vector <Entry>;
+    using Entry = std::pair<std::string, int>;
+    using List = std::vector<Entry>;
 
-    List getCounts (int minimumThreshold) const;
+    List
+    getCounts(int minimumThreshold) const;
 
 public:
     /** Implementation for @ref CountedObject.
 
         @internal
     */
-    class CounterBase
+    class Counter
     {
     public:
-        CounterBase () noexcept;
-
-        virtual ~CounterBase () noexcept;
-
-        int increment () noexcept
+        Counter(std::string name) noexcept : name_(std::move(name)), count_(0)
         {
-            return ++m_count;
+            // Insert ourselves at the front of the lock-free linked list
+            CountedObjects& instance = CountedObjects::getInstance();
+            Counter* head;
+
+            do
+            {
+                head = instance.m_head.load();
+                next_ = head;
+            } while (instance.m_head.exchange(this) != head);
+
+            ++instance.m_count;
         }
 
-        int decrement () noexcept
+        ~Counter() noexcept = default;
+
+        int
+        increment() noexcept
         {
-            return --m_count;
+            return ++count_;
         }
 
-        int getCount () const noexcept
+        int
+        decrement() noexcept
         {
-            return m_count.load ();
+            return --count_;
         }
 
-        CounterBase* getNext () const noexcept
+        int
+        getCount() const noexcept
         {
-            return m_next;
+            return count_.load();
         }
 
-        virtual char const* getName () const = 0;
+        Counter*
+        getNext() const noexcept
+        {
+            return next_;
+        }
+
+        std::string const&
+        getName() const noexcept
+        {
+            return name_;
+        }
 
     private:
-        virtual void checkPureVirtual () const = 0;
-
-    protected:
-        std::atomic <int> m_count;
-        CounterBase* m_next;
+        std::string const name_;
+        std::atomic<int> count_;
+        Counter* next_;
     };
 
 private:
-    CountedObjects () noexcept;
-    ~CountedObjects () noexcept = default;
+    CountedObjects() noexcept;
+    ~CountedObjects() noexcept = default;
 
 private:
-    std::atomic <int> m_count;
-    std::atomic <CounterBase*> m_head;
+    std::atomic<int> m_count;
+    std::atomic<Counter*> m_head;
 };
 
 //------------------------------------------------------------------------------
@@ -101,47 +123,34 @@ private:
 template <class Object>
 class CountedObject
 {
-public:
-    CountedObject () noexcept
-    {
-        getCounter ().increment ();
-    }
-
-    CountedObject (CountedObject const&) noexcept
-    {
-        getCounter ().increment ();
-    }
-
-    CountedObject& operator=(CountedObject const&) noexcept = default;
-
-    ~CountedObject () noexcept
-    {
-        getCounter ().decrement ();
-    }
-
 private:
-    class Counter : public CountedObjects::CounterBase
+    static auto&
+    getCounter() noexcept
     {
-    public:
-        Counter () noexcept { }
-
-        char const* getName () const override
-        {
-            return Object::getCountedObjectName ();
-        }
-
-        void checkPureVirtual () const override { }
-    };
-
-private:
-    static Counter& getCounter() noexcept
-    {
-        static_assert(std::is_nothrow_constructible<Counter>{}, "");
-        static Counter c;
+        static CountedObjects::Counter c{beast::type_name<Object>()};
         return c;
+    }
+
+public:
+    CountedObject() noexcept
+    {
+        getCounter().increment();
+    }
+
+    CountedObject(CountedObject const&) noexcept
+    {
+        getCounter().increment();
+    }
+
+    CountedObject&
+    operator=(CountedObject const&) noexcept = default;
+
+    ~CountedObject() noexcept
+    {
+        getCounter().decrement();
     }
 };
 
-} // ripple
+}  // namespace ripple
 
 #endif

@@ -8,18 +8,24 @@
 # NOTE: these are sensible defaults for Ripple pipelines. These
 # can be overridden by project or group variables as needed.
 variables:
+  # these containers are built manually using the rippled
+  # cmake build (container targets) and tagged/pushed so they 
+  # can be used here
+  RPM_CONTAINER_TAG: "2020-02-10"
   RPM_CONTAINER_NAME: "rippled-rpm-builder"
+  RPM_CONTAINER_FULLNAME: "${RPM_CONTAINER_NAME}:${RPM_CONTAINER_TAG}"
+  DPKG_CONTAINER_TAG: "2020-02-10"
   DPKG_CONTAINER_NAME: "rippled-dpkg-builder"
+  DPKG_CONTAINER_FULLNAME: "${DPKG_CONTAINER_NAME}:${DPKG_CONTAINER_TAG}"
   ARTIFACTORY_HOST: "artifactory.ops.ripple.com"
   ARTIFACTORY_HUB: "${ARTIFACTORY_HOST}:6555"
-  GIT_SIGN_PUBKEYS_URL: "https://gitlab.ops.ripple.com/snippets/11/raw"
+  GIT_SIGN_PUBKEYS_URL: "https://gitlab.ops.ripple.com/xrpledger/rippled-packages/snippets/49/raw"
   PUBLIC_REPO_ROOT: "https://repos.ripple.com/repos"
   # also need to define this variable ONLY for the primary
   # build/publish pipeline on the mainline repo:
   #   IS_PRIMARY_REPO = "true"
 
 stages:
-  - build_containers
   - build_packages
   - sign_packages
   - smoketest
@@ -31,20 +37,23 @@ stages:
   - push_to_prod
   - verify_from_prod
   - get_final_hashes
+  - build_containers
 
 .dind_template: &dind_param
   before_script:
     - . ./Builds/containers/gitlab-ci/docker_alpine_setup.sh
   variables:
     docker_driver: overlay2
+    DOCKER_TLS_CERTDIR: ""
   image:
-    name: docker:latest
+    name: artifactory.ops.ripple.com/docker:latest
   services:
     # workaround for TLS issues - consider going back
     # back to unversioned `dind` when issues are resolved
-    - docker:18-dind
+    - name: artifactory.ops.ripple.com/docker:stable-dind
+      alias: docker
   tags:
-    - docker-4xlarge
+    - 4xlarge
 
 .only_primary_template: &only_primary
   only:
@@ -67,35 +76,6 @@ stages:
 
 #########################################################################
 ##                                                                     ##
-##  stage: build_containers                                            ##
-##                                                                     ##
-##  build containers from docker definitions. These containers are     ##
-##  subsequently used to build the rpm and deb packages.               ##
-##                                                                     ##
-#########################################################################
-
-build_centos_container:
-  stage: build_containers
-  <<: *dind_param
-  cache:
-    key: containers
-    paths:
-      - .nih_c
-  script:
-    - . ./Builds/containers/gitlab-ci/build_container.sh rpm
-
-build_ubuntu_container:
-  stage: build_containers
-  <<: *dind_param
-  cache:
-    key: containers
-    paths:
-      - .nih_c
-  script:
-    - . ./Builds/containers/gitlab-ci/build_container.sh dpkg
-
-#########################################################################
-##                                                                     ##
 ##  stage: build_packages                                              ##
 ##                                                                     ##
 ##  build packages using containers from previous stage.               ##
@@ -104,31 +84,19 @@ build_ubuntu_container:
 
 rpm_build:
   stage: build_packages
-  dependencies:
-    - build_centos_container
   <<: *dind_param
   artifacts:
     paths:
       - build/rpm/packages/
-  cache:
-    key: rpm
-    paths:
-      - .nih_c/pkgbuild
   script:
     - . ./Builds/containers/gitlab-ci/build_package.sh rpm
 
 dpkg_build:
   stage: build_packages
-  dependencies:
-    - build_ubuntu_container
   <<: *dind_param
   artifacts:
     paths:
       - build/dpkg/packages/
-  cache:
-    key: dpkg
-    paths:
-      - .nih_c/pkgbuild
   script:
     - . ./Builds/containers/gitlab-ci/build_package.sh dpkg
 
@@ -145,8 +113,8 @@ rpm_sign:
   dependencies:
     - rpm_build
   image:
-    name: centos:7
-    # <<: *dind_param
+    name: artifactory.ops.ripple.com/centos:7
+  <<: *only_primary
   before_script:
   - |
     # Make sure GnuPG is installed
@@ -174,8 +142,8 @@ dpkg_sign:
   dependencies:
     - dpkg_build
   image:
-    name: ubuntu:19.04
-    # <<: *dind_param
+    name: artifactory.ops.ripple.com/ubuntu:18.04
+  <<: *only_primary
   before_script:
   - |
     # make sure we have GnuPG
@@ -198,7 +166,7 @@ dpkg_sign:
   script:
     - ls -alh build/dpkg/packages
     - . ./Builds/containers/gitlab-ci/sign_package.sh dpkg
-     
+
 #########################################################################
 ##                                                                     ##
 ##  stage: smoketest                                                   ##
@@ -211,67 +179,75 @@ centos_7_smoketest:
   stage: smoketest
   dependencies:
     - rpm_build
+    - rpm_sign
   image:
-    name: centos:7
+    name: artifactory.ops.ripple.com/centos:7
   <<: *run_local_smoketest
 
 fedora_29_smoketest:
   stage: smoketest
   dependencies:
     - rpm_build
+    - rpm_sign
   image:
-    name: fedora:29
+    name: artifactory.ops.ripple.com/fedora:29
   <<: *run_local_smoketest
 
 fedora_28_smoketest:
   stage: smoketest
   dependencies:
     - rpm_build
+    - rpm_sign
   image:
-    name: fedora:28
+    name: artifactory.ops.ripple.com/fedora:28
   <<: *run_local_smoketest
 
 fedora_27_smoketest:
   stage: smoketest
   dependencies:
     - rpm_build
+    - rpm_sign
   image:
-    name: fedora:27
+    name: artifactory.ops.ripple.com/fedora:27
   <<: *run_local_smoketest
 
 ## this one is not LTS, but we
 ## get some extra coverage by including it
 ## consider dropping it when 20.04 is ready
-ubuntu_19_smoketest:
+ubuntu_20_smoketest:
   stage: smoketest
   dependencies:
     - dpkg_build
+    - dpkg_sign
   image:
-    name: ubuntu:19.04
+    name: artifactory.ops.ripple.com/ubuntu:20.04
   <<: *run_local_smoketest
 
 ubuntu_18_smoketest:
   stage: smoketest
   dependencies:
     - dpkg_build
+    - dpkg_sign
   image:
-    name: ubuntu:18.04
+    name: artifactory.ops.ripple.com/ubuntu:18.04
   <<: *run_local_smoketest
 
 ubuntu_16_smoketest:
   stage: smoketest
   dependencies:
     - dpkg_build
+    - dpkg_sign
   image:
-    name: ubuntu:16.04
+    name: artifactory.ops.ripple.com/ubuntu:16.04
   <<: *run_local_smoketest
 
 debian_9_smoketest:
   stage: smoketest
   dependencies:
     - dpkg_build
+    - dpkg_sign
   image:
-    name: debian:9
+    name: artifactory.ops.ripple.com/debian:9
   <<: *run_local_smoketest
 
 #########################################################################
@@ -289,7 +265,7 @@ debian_9_smoketest:
 verify_head_signed:
   stage: verify_sig
   image:
-    name: ubuntu:latest
+    name: artifactory.ops.ripple.com/ubuntu:latest
   <<: *only_primary
   script:
     - . ./Builds/containers/gitlab-ci/verify_head_commit.sh
@@ -307,17 +283,19 @@ tag_bld_images:
   stage: tag_images
   variables:
     docker_driver: overlay2
+    DOCKER_TLS_CERTDIR: ""
   image:
-    name: docker:latest
+    name: artifactory.ops.ripple.com/docker:latest
   services:
     # workaround for TLS issues - consider going back
     # back to unversioned `dind` when issues are resolved
-    - docker:18-dind
+    - name: artifactory.ops.ripple.com/docker:stable-dind
+      alias: docker
   tags:
-    - docker-large
+    - large
   dependencies:
-    - rpm_build
-    - dpkg_build
+    - rpm_sign
+    - dpkg_sign
   <<: *only_primary
   script:
     - . ./Builds/containers/gitlab-ci/tag_docker_image.sh
@@ -337,13 +315,13 @@ push_test:
     DEB_REPO: "rippled-deb-test-mirror"
     RPM_REPO: "rippled-rpm-test-mirror"
   image:
-    name: alpine:latest
+    name: artifactory.ops.ripple.com/alpine:latest
   artifacts:
     paths:
       - files.info
   dependencies:
-    - rpm_build
-    - dpkg_build
+    - rpm_sign
+    - dpkg_sign
   <<: *only_primary
   script:
     - . ./Builds/containers/gitlab-ci/push_to_artifactory.sh "PUT" "."
@@ -362,9 +340,9 @@ centos_7_verify_repo_test:
   variables:
     RPM_REPO: "rippled-rpm-test-mirror"
   image:
-    name: centos:7
+    name: artifactory.ops.ripple.com/centos:7
   dependencies:
-    - rpm_build
+    - rpm_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -373,9 +351,9 @@ fedora_29_verify_repo_test:
   variables:
     RPM_REPO: "rippled-rpm-test-mirror"
   image:
-    name: fedora:29
+    name: artifactory.ops.ripple.com/fedora:29
   dependencies:
-    - rpm_build
+    - rpm_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -384,9 +362,9 @@ fedora_28_verify_repo_test:
   variables:
     RPM_REPO: "rippled-rpm-test-mirror"
   image:
-    name: fedora:28
+    name: artifactory.ops.ripple.com/fedora:28
   dependencies:
-    - rpm_build
+    - rpm_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -395,21 +373,21 @@ fedora_27_verify_repo_test:
   variables:
     RPM_REPO: "rippled-rpm-test-mirror"
   image:
-    name: fedora:27
+    name: artifactory.ops.ripple.com/fedora:27
   dependencies:
-    - rpm_build
+    - rpm_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
-ubuntu_19_verify_repo_test:
+ubuntu_20_verify_repo_test:
   stage: verify_from_test
   variables:
-    DISTRO: "disco"
+    DISTRO: "focal"
     DEB_REPO: "rippled-deb-test-mirror"
   image:
-    name: ubuntu:19.04
+    name: artifactory.ops.ripple.com/ubuntu:20.04
   dependencies:
-    - dpkg_build
+    - dpkg_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -419,9 +397,9 @@ ubuntu_18_verify_repo_test:
     DISTRO: "bionic"
     DEB_REPO: "rippled-deb-test-mirror"
   image:
-    name: ubuntu:18.04
+    name: artifactory.ops.ripple.com/ubuntu:18.04
   dependencies:
-    - dpkg_build
+    - dpkg_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -431,9 +409,9 @@ ubuntu_16_verify_repo_test:
     DISTRO: "xenial"
     DEB_REPO: "rippled-deb-test-mirror"
   image:
-    name: ubuntu:16.04
+    name: artifactory.ops.ripple.com/ubuntu:16.04
   dependencies:
-    - dpkg_build
+    - dpkg_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -443,9 +421,9 @@ debian_9_verify_repo_test:
     DISTRO: "stretch"
     DEB_REPO: "rippled-deb-test-mirror"
   image:
-    name: debian:9
+    name: artifactory.ops.ripple.com/debian:9
   dependencies:
-    - dpkg_build
+    - dpkg_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -461,7 +439,7 @@ debian_9_verify_repo_test:
 wait_before_push_prod:
   stage: wait_approval_prod
   image:
-    name: alpine:latest
+    name: artifactory.ops.ripple.com/alpine:latest
   <<: *only_primary
   script:
     - echo "proceeding to next stage"
@@ -482,14 +460,14 @@ push_prod:
     DEB_REPO: "rippled-deb"
     RPM_REPO: "rippled-rpm"
   image:
-    name: alpine:latest
+    name: artifactory.ops.ripple.com/alpine:latest
   stage: push_to_prod
   artifacts:
     paths:
       - files.info
   dependencies:
-    - rpm_build
-    - dpkg_build
+    - rpm_sign
+    - dpkg_sign
   <<: *only_primary
   script:
     - . ./Builds/containers/gitlab-ci/push_to_artifactory.sh "PUT" "."
@@ -508,9 +486,9 @@ centos_7_verify_repo_prod:
   variables:
     RPM_REPO: "rippled-rpm"
   image:
-    name: centos:7
+    name: artifactory.ops.ripple.com/centos:7
   dependencies:
-    - rpm_build
+    - rpm_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -519,9 +497,9 @@ fedora_29_verify_repo_prod:
   variables:
     RPM_REPO: "rippled-rpm"
   image:
-    name: fedora:29
+    name: artifactory.ops.ripple.com/fedora:29
   dependencies:
-    - rpm_build
+    - rpm_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -530,9 +508,9 @@ fedora_28_verify_repo_prod:
   variables:
     RPM_REPO: "rippled-rpm"
   image:
-    name: fedora:28
+    name: artifactory.ops.ripple.com/fedora:28
   dependencies:
-    - rpm_build
+    - rpm_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -541,21 +519,21 @@ fedora_27_verify_repo_prod:
   variables:
     RPM_REPO: "rippled-rpm"
   image:
-    name: fedora:27
+    name: artifactory.ops.ripple.com/fedora:27
   dependencies:
-    - rpm_build
+    - rpm_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
-ubuntu_19_verify_repo_prod:
+ubuntu_20_verify_repo_prod:
   stage: verify_from_prod
   variables:
-    DISTRO: "disco"
+    DISTRO: "focal"
     DEB_REPO: "rippled-deb"
   image:
-    name: ubuntu:19.04
+    name: artifactory.ops.ripple.com/ubuntu:20.04
   dependencies:
-    - dpkg_build
+    - dpkg_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -565,9 +543,9 @@ ubuntu_18_verify_repo_prod:
     DISTRO: "bionic"
     DEB_REPO: "rippled-deb"
   image:
-    name: ubuntu:18.04
+    name: artifactory.ops.ripple.com/ubuntu:18.04
   dependencies:
-    - dpkg_build
+    - dpkg_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -577,9 +555,9 @@ ubuntu_16_verify_repo_prod:
     DISTRO: "xenial"
     DEB_REPO: "rippled-deb"
   image:
-    name: ubuntu:16.04
+    name: artifactory.ops.ripple.com/ubuntu:16.04
   dependencies:
-    - dpkg_build
+    - dpkg_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -589,9 +567,9 @@ debian_9_verify_repo_prod:
     DISTRO: "stretch"
     DEB_REPO: "rippled-deb"
   image:
-    name: debian:9
+    name: artifactory.ops.ripple.com/debian:9
   dependencies:
-    - dpkg_build
+    - dpkg_sign
   <<: *only_primary
   <<: *run_repo_smoketest
 
@@ -609,15 +587,40 @@ get_prod_hashes:
     DEB_REPO: "rippled-deb"
     RPM_REPO: "rippled-rpm"
   image:
-    name: alpine:latest
+    name: artifactory.ops.ripple.com/alpine:latest
   stage: get_final_hashes
   artifacts:
     paths:
       - files.info
   dependencies:
-    - rpm_build
-    - dpkg_build
+    - rpm_sign
+    - dpkg_sign
   <<: *only_primary
   script:
     - . ./Builds/containers/gitlab-ci/push_to_artifactory.sh "GET" ".checksums"
+
+#########################################################################
+##                                                                     ##
+##  stage: build_containers                                            ##
+##                                                                     ##
+##  build containers from docker definitions. These containers are NOT ##
+##  used for the package build. This step is only used to ensure that  ##
+##  the package build targets and files are still working properly.    ##
+##                                                                     ##
+#########################################################################
+
+build_centos_container:
+  stage: build_containers
+  <<: *dind_param
+  script:
+    - . ./Builds/containers/gitlab-ci/build_container.sh rpm
+  allow_failure: true
+
+build_ubuntu_container:
+  stage: build_containers
+  <<: *dind_param
+  script:
+    - . ./Builds/containers/gitlab-ci/build_container.sh dpkg
+  allow_failure: true
+
 

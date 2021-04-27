@@ -22,9 +22,11 @@
 
 #include <ripple/app/ledger/Ledger.h>
 #include <ripple/app/main/Application.h>
-#include <ripple/protocol/RippleLedgerHash.h>
 #include <ripple/beast/insight/Collector.h>
 #include <ripple/beast/insight/Event.h>
+#include <ripple/protocol/RippleLedgerHash.h>
+
+#include <optional>
 
 namespace ripple {
 
@@ -34,73 +36,81 @@ namespace ripple {
 class LedgerHistory
 {
 public:
-    LedgerHistory (beast::insight::Collector::ptr const& collector,
+    LedgerHistory(
+        beast::insight::Collector::ptr const& collector,
         Application& app);
 
     /** Track a ledger
         @return `true` if the ledger was already tracked
     */
-    bool insert (std::shared_ptr<Ledger const> ledger,
-        bool validated);
+    bool
+    insert(std::shared_ptr<Ledger const> ledger, bool validated);
 
     /** Get the ledgers_by_hash cache hit rate
         @return the hit rate
     */
-    float getCacheHitRate ()
+    float
+    getCacheHitRate()
     {
-        return m_ledgers_by_hash.getHitRate ();
+        return m_ledgers_by_hash.getHitRate();
     }
 
     /** Get a ledger given its sequence number */
     std::shared_ptr<Ledger const>
-    getLedgerBySeq (LedgerIndex ledgerIndex);
+    getLedgerBySeq(LedgerIndex ledgerIndex);
 
     /** Retrieve a ledger given its hash */
     std::shared_ptr<Ledger const>
-    getLedgerByHash (LedgerHash const& ledgerHash);
+    getLedgerByHash(LedgerHash const& ledgerHash);
 
     /** Get a ledger's hash given its sequence number
         @param ledgerIndex The sequence number of the desired ledger
         @return The hash of the specified ledger
     */
-    LedgerHash getLedgerHash (LedgerIndex ledgerIndex);
+    LedgerHash
+    getLedgerHash(LedgerIndex ledgerIndex);
 
     /** Set the history cache's parameters
         @param size The target size of the cache
         @param age The target age of the cache, in seconds
     */
-    void tune (int size, std::chrono::seconds age);
+    void
+    tune(int size, std::chrono::seconds age);
 
     /** Remove stale cache entries
-    */
-    void sweep ()
+     */
+    void
+    sweep()
     {
-        m_ledgers_by_hash.sweep ();
-        m_consensus_validated.sweep ();
+        m_ledgers_by_hash.sweep();
+        m_consensus_validated.sweep();
     }
 
     /** Report that we have locally built a particular ledger */
-    void builtLedger (
+    void
+    builtLedger(
         std::shared_ptr<Ledger const> const&,
         uint256 const& consensusHash,
         Json::Value);
 
     /** Report that we have validated a particular ledger */
-    void validatedLedger (
+    void
+    validatedLedger(
         std::shared_ptr<Ledger const> const&,
-        boost::optional<uint256> const& consensusHash);
+        std::optional<uint256> const& consensusHash);
 
     /** Repair a hash to index mapping
         @param ledgerIndex The index whose mapping is to be repaired
         @param ledgerHash The hash it is to be mapped to
         @return `true` if the mapping was repaired
     */
-    bool fixIndex(LedgerIndex ledgerIndex, LedgerHash const& ledgerHash);
+    bool
+    fixIndex(LedgerIndex ledgerIndex, LedgerHash const& ledgerHash);
 
-    void clearLedgerCachePrior (LedgerIndex seq);
+    void
+    clearLedgerCachePrior(LedgerIndex seq);
 
 private:
-
     /** Log details in the case where we build one ledger but
         validate a different one.
         @param built The hash of the ledger we built
@@ -115,15 +125,15 @@ private:
     handleMismatch(
         LedgerHash const& built,
         LedgerHash const& valid,
-        boost::optional<uint256> const& builtConsensusHash,
-        boost::optional<uint256> const& validatedConsensusHash,
+        std::optional<uint256> const& builtConsensusHash,
+        std::optional<uint256> const& validatedConsensusHash,
         Json::Value const& consensus);
 
     Application& app_;
     beast::insight::Collector::ptr collector_;
     beast::insight::Counter mismatch_counter_;
 
-    using LedgersByHash = TaggedCache <LedgerHash, Ledger const>;
+    using LedgersByHash = TaggedCache<LedgerHash, Ledger const>;
 
     LedgersByHash m_ledgers_by_hash;
 
@@ -132,26 +142,25 @@ private:
     struct cv_entry
     {
         // Hash of locally built ledger
-        boost::optional<LedgerHash> built;
+        std::optional<LedgerHash> built;
         // Hash of the validated ledger
-        boost::optional<LedgerHash> validated;
+        std::optional<LedgerHash> validated;
         // Hash of locally accepted consensus transaction set
-        boost::optional<uint256> builtConsensusHash;
+        std::optional<uint256> builtConsensusHash;
         // Hash of validated consensus transaction set
-        boost::optional<uint256> validatedConsensusHash;
+        std::optional<uint256> validatedConsensusHash;
         // Consensus metadata of built ledger
-        boost::optional<Json::Value> consensus;
+        std::optional<Json::Value> consensus;
     };
-    using ConsensusValidated = TaggedCache <LedgerIndex, cv_entry>;
+    using ConsensusValidated = TaggedCache<LedgerIndex, cv_entry>;
     ConsensusValidated m_consensus_validated;
 
-
     // Maps ledger indexes to the corresponding hash.
-    std::map <LedgerIndex, LedgerHash> mLedgersByIndex; // validated ledgers
+    std::map<LedgerIndex, LedgerHash> mLedgersByIndex;  // validated ledgers
 
     beast::Journal j_;
 };
 
-} // ripple
+}  // namespace ripple
 
 #endif

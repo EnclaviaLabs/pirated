@@ -22,9 +22,8 @@
 
 #include <ripple/app/tx/applySteps.h>
 #include <ripple/app/tx/impl/ApplyContext.h>
-#include <ripple/protocol/XRPAmount.h>
+#include <ripple/basics/XRPAmount.h>
 #include <ripple/beast/utility/Journal.h>
-#include <boost/optional.hpp>
 
 namespace ripple {
 
@@ -36,13 +35,17 @@ public:
     STTx const& tx;
     Rules const rules;
     ApplyFlags flags;
-    beast::Journal j;
+    beast::Journal const j;
 
-    PreflightContext(Application& app_, STTx const& tx_,
-        Rules const& rules_, ApplyFlags flags_,
-            beast::Journal j_);
+    PreflightContext(
+        Application& app_,
+        STTx const& tx_,
+        Rules const& rules_,
+        ApplyFlags flags_,
+        beast::Journal j_);
 
-    PreflightContext& operator=(PreflightContext const&) = delete;
+    PreflightContext&
+    operator=(PreflightContext const&) = delete;
 };
 
 /** State information when determining if a tx is likely to claim a fee. */
@@ -54,12 +57,15 @@ public:
     TER preflightResult;
     STTx const& tx;
     ApplyFlags flags;
-    beast::Journal j;
+    beast::Journal const j;
 
-    PreclaimContext(Application& app_, ReadView const& view_,
-        TER preflightResult_, STTx const& tx_,
-            ApplyFlags flags_,
-            beast::Journal j_ = beast::Journal{beast::Journal::getNullSink()})
+    PreclaimContext(
+        Application& app_,
+        ReadView const& view_,
+        TER preflightResult_,
+        STTx const& tx_,
+        ApplyFlags flags_,
+        beast::Journal j_ = beast::Journal{beast::Journal::getNullSink()})
         : app(app_)
         , view(view_)
         , preflightResult(preflightResult_)
@@ -69,27 +75,30 @@ public:
     {
     }
 
-    PreclaimContext& operator=(PreclaimContext const&) = delete;
+    PreclaimContext&
+    operator=(PreclaimContext const&) = delete;
 };
 
-struct TxConsequences;
+class TxConsequences;
 struct PreflightResult;
 
 class Transactor
 {
 protected:
     ApplyContext& ctx_;
-    beast::Journal j_;
+    beast::Journal const j_;
 
-    AccountID     account_;
-    XRPAmount     mPriorBalance;  // Balance before fees.
-    XRPAmount     mSourceBalance; // Balance after fees.
+    AccountID const account_;
+    XRPAmount mPriorBalance;   // Balance before fees.
+    XRPAmount mSourceBalance;  // Balance after fees.
 
     virtual ~Transactor() = default;
-    Transactor (Transactor const&) = delete;
-    Transactor& operator= (Transactor const&) = delete;
+    Transactor(Transactor const&) = delete;
+    Transactor&
+    operator=(Transactor const&) = delete;
 
 public:
+    enum ConsequencesFactoryType { Normal, Blocker, Custom };
     /** Process the transaction. */
     std::pair<TER, bool>
     operator()();
@@ -116,43 +125,24 @@ public:
     comes with it.
     */
 
-    static
-    NotTEC
-    checkSeq (PreclaimContext const& ctx);
+    static NotTEC
+    checkSeqProxy(ReadView const& view, STTx const& tx, beast::Journal j);
 
-    static
-    TER
-    checkFee (PreclaimContext const& ctx, std::uint64_t baseFee);
+    static NotTEC
+    checkPriorTxAndLastLedger(PreclaimContext const& ctx);
 
-    static
-    NotTEC
-    checkSign (PreclaimContext const& ctx);
+    static TER
+    checkFee(PreclaimContext const& ctx, FeeUnit64 baseFee);
+
+    static NotTEC
+    checkSign(PreclaimContext const& ctx);
 
     // Returns the fee in fee units, not scaled for load.
-    static
-    std::uint64_t
-    calculateBaseFee (
-        ReadView const& view,
-        STTx const& tx);
+    static FeeUnit64
+    calculateBaseFee(ReadView const& view, STTx const& tx);
 
-    static
-    bool
-    affectsSubsequentTransactionAuth(STTx const& tx)
-    {
-        return false;
-    }
-
-    static
-    XRPAmount
-    calculateFeePaid(STTx const& tx);
-
-    static
-    XRPAmount
-    calculateMaxSpend(STTx const& tx);
-
-    static
-    TER
-    preclaim(PreclaimContext const &ctx)
+    static TER
+    preclaim(PreclaimContext const& ctx)
     {
         // Most transactors do nothing
         // after checkSeq/Fee/Sign.
@@ -160,16 +150,25 @@ public:
     }
     /////////////////////////////////////////////////////
 
+    // Interface used by DeleteAccount
+    static TER
+    ticketDelete(
+        ApplyView& view,
+        AccountID const& account,
+        uint256 const& ticketIndex,
+        beast::Journal j);
+
 protected:
     TER
     apply();
 
-    explicit
-    Transactor (ApplyContext& ctx);
+    explicit Transactor(ApplyContext& ctx);
 
-    virtual void preCompute();
+    virtual void
+    preCompute();
 
-    virtual TER doApply () = 0;
+    virtual TER
+    doApply() = 0;
 
     /** Compute the minimum fee required to process a transaction
         with a given baseFee based on the current server load.
@@ -180,18 +179,25 @@ protected:
         @param fees Fee settings from the current ledger
         @param flags Transaction processing fees
      */
-    static
-    XRPAmount
-    minimumFee (Application& app, std::uint64_t baseFee,
-        Fees const& fees, ApplyFlags flags);
+    static XRPAmount
+    minimumFee(
+        Application& app,
+        FeeUnit64 baseFee,
+        Fees const& fees,
+        ApplyFlags flags);
 
 private:
-    XRPAmount reset(XRPAmount fee);
+    std::pair<TER, XRPAmount>
+    reset(XRPAmount fee);
 
-    void setSeq ();
-    TER payFee ();
-    static NotTEC checkSingleSign (PreclaimContext const& ctx);
-    static NotTEC checkMultiSign (PreclaimContext const& ctx);
+    TER
+    consumeSeqProxy(SLE::pointer const& sleAccount);
+    TER
+    payFee();
+    static NotTEC
+    checkSingleSign(PreclaimContext const& ctx);
+    static NotTEC
+    checkMultiSign(PreclaimContext const& ctx);
 };
 
 /** Performs early sanity checks on the txid */
@@ -200,12 +206,12 @@ preflight0(PreflightContext const& ctx);
 
 /** Performs early sanity checks on the account and fee fields */
 NotTEC
-preflight1 (PreflightContext const& ctx);
+preflight1(PreflightContext const& ctx);
 
 /** Checks whether the signature appears valid */
 NotTEC
-preflight2 (PreflightContext const& ctx);
+preflight2(PreflightContext const& ctx);
 
-}
+}  // namespace ripple
 
 #endif

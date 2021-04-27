@@ -21,32 +21,36 @@
 #define RIPPLE_APP_MISC_DETAIL_WORKBASE_H_INCLUDED
 
 #include <ripple/app/misc/detail/Work.h>
+#include <ripple/basics/random.h>
 #include <ripple/protocol/BuildInfo.h>
+
+#include <boost/asio.hpp>
 #include <boost/beast/core/multi_buffer.hpp>
 #include <boost/beast/http/empty_body.hpp>
 #include <boost/beast/http/read.hpp>
 #include <boost/beast/http/write.hpp>
-#include <boost/asio.hpp>
+
+#include <vector>
 
 namespace ripple {
 
 namespace detail {
 
 template <class Impl>
-class WorkBase
-    : public Work
+class WorkBase : public Work
 {
 protected:
     using error_code = boost::system::error_code;
+    using endpoint_type = boost::asio::ip::tcp::endpoint;
 
 public:
-    using callback_type =
-        std::function<void(error_code const&, response_type&&)>;
+    using callback_type = std::function<
+        void(error_code const&, endpoint_type const&, response_type&&)>;
+
 protected:
     using socket_type = boost::asio::ip::tcp::socket;
-    using endpoint_type = boost::asio::ip::tcp::endpoint;
     using resolver_type = boost::asio::ip::tcp::resolver;
-    using query_type = resolver_type::query;
+    using results_type = boost::asio::ip::tcp::resolver::results_type;
     using request_type =
         boost::beast::http::request<boost::beast::http::empty_body>;
 
@@ -60,13 +64,19 @@ protected:
     socket_type socket_;
     request_type req_;
     response_type res_;
-    boost::beast::multi_buffer read_buf_;
+    boost::beast::multi_buffer readBuf_;
+    endpoint_type lastEndpoint_;
+    bool lastStatus_;
 
 public:
     WorkBase(
-        std::string const& host, std::string const& path,
+        std::string const& host,
+        std::string const& path,
         std::string const& port,
-        boost::asio::io_service& ios, callback_type cb);
+        boost::asio::io_service& ios,
+        endpoint_type const& lastEndpoint,
+        bool lastStatus,
+        callback_type cb);
     ~WorkBase();
 
     Impl&
@@ -75,15 +85,17 @@ public:
         return *static_cast<Impl*>(this);
     }
 
-    void run() override;
+    void
+    run() override;
 
-    void cancel() override;
+    void
+    cancel() override;
 
     void
     fail(error_code const& ec);
 
     void
-    onResolve(error_code const& ec, resolver_type::iterator it);
+    onResolve(error_code const& ec, results_type results);
 
     void
     onStart();
@@ -93,14 +105,23 @@ public:
 
     void
     onResponse(error_code const& ec);
+
+private:
+    void
+    close();
 };
 
 //------------------------------------------------------------------------------
 
-template<class Impl>
-WorkBase<Impl>::WorkBase(std::string const& host,
-    std::string const& path, std::string const& port,
-    boost::asio::io_service& ios, callback_type cb)
+template <class Impl>
+WorkBase<Impl>::WorkBase(
+    std::string const& host,
+    std::string const& path,
+    std::string const& port,
+    boost::asio::io_service& ios,
+    endpoint_type const& lastEndpoint,
+    bool lastStatus,
+    callback_type cb)
     : host_(host)
     , path_(path)
     , port_(port)
@@ -109,112 +130,179 @@ WorkBase<Impl>::WorkBase(std::string const& host,
     , strand_(ios)
     , resolver_(ios)
     , socket_(ios)
+    , lastEndpoint_{lastEndpoint}
+    , lastStatus_(lastStatus)
 {
 }
 
-template<class Impl>
+template <class Impl>
 WorkBase<Impl>::~WorkBase()
 {
     if (cb_)
-        cb_ (make_error_code(boost::system::errc::not_a_socket),
+        cb_(make_error_code(boost::system::errc::not_a_socket),
+            lastEndpoint_,
             std::move(res_));
+    close();
 }
 
-template<class Impl>
+template <class Impl>
 void
 WorkBase<Impl>::run()
 {
-    if (! strand_.running_in_this_thread())
-        return ios_.post(strand_.wrap (std::bind(
-            &WorkBase::run, impl().shared_from_this())));
+    if (!strand_.running_in_this_thread())
+        return ios_.post(
+            strand_.wrap(std::bind(&WorkBase::run, impl().shared_from_this())));
 
     resolver_.async_resolve(
-        query_type{host_, port_},
-        strand_.wrap (std::bind(&WorkBase::onResolve, impl().shared_from_this(),
+        host_,
+        port_,
+        strand_.wrap(std::bind(
+            &WorkBase::onResolve,
+            impl().shared_from_this(),
             std::placeholders::_1,
-                std::placeholders::_2)));
+            std::placeholders::_2)));
 }
 
-template<class Impl>
+template <class Impl>
 void
 WorkBase<Impl>::cancel()
 {
-    if (! strand_.running_in_this_thread())
+    if (!strand_.running_in_this_thread())
     {
-        return ios_.post(strand_.wrap (std::bind(
-            &WorkBase::cancel, impl().shared_from_this())));
+        return ios_.post(strand_.wrap(
+            std::bind(&WorkBase::cancel, impl().shared_from_this())));
     }
 
     error_code ec;
     resolver_.cancel();
-    socket_.cancel (ec);
+    socket_.cancel(ec);
 }
 
-template<class Impl>
+template <class Impl>
 void
 WorkBase<Impl>::fail(error_code const& ec)
 {
     if (cb_)
     {
-        cb_(ec, std::move(res_));
+        cb_(ec, lastEndpoint_, std::move(res_));
         cb_ = nullptr;
     }
 }
 
-template<class Impl>
+template <class Impl>
 void
-WorkBase<Impl>::onResolve(error_code const& ec, resolver_type::iterator it)
+WorkBase<Impl>::onResolve(error_code const& ec, results_type results)
 {
     if (ec)
         return fail(ec);
 
-    socket_.async_connect(*it,
-        strand_.wrap (std::bind(&Impl::onConnect, impl().shared_from_this(),
+    // Use last endpoint if it is successfully connected
+    // and is in the list, otherwise pick a random endpoint
+    // from the list (excluding last endpoint). If there is
+    // only one endpoint and it is the last endpoint then
+    // use the last endpoint.
+    lastEndpoint_ = [&]() -> endpoint_type {
+        int foundIndex = 0;
+        auto const foundIt = std::find_if(
+            results.begin(), results.end(), [&](endpoint_type const& e) {
+                if (e == lastEndpoint_)
+                    return true;
+                foundIndex++;
+                return false;
+            });
+        if (foundIt != results.end() && lastStatus_)
+            return lastEndpoint_;
+        else if (results.size() == 1)
+            return *results.begin();
+        else if (foundIt == results.end())
+            return *std::next(results.begin(), rand_int(results.size() - 1));
+
+        // lastEndpoint_ is part of the collection
+        // Pick a random number from the n-1 valid choices, if we use
+        // this as an index, note the last element will never be chosen
+        // and the `lastEndpoint_` index may be chosen. So when the
+        // `lastEndpoint_` index is chosen, that is treated as if the
+        // last element was chosen.
+        auto randIndex =
+            (results.size() > 2) ? rand_int(results.size() - 2) : 0;
+        if (randIndex == foundIndex)
+            randIndex = results.size() - 1;
+        return *std::next(results.begin(), randIndex);
+    }();
+
+    socket_.async_connect(
+        lastEndpoint_,
+        strand_.wrap(std::bind(
+            &Impl::onConnect,
+            impl().shared_from_this(),
             std::placeholders::_1)));
 }
 
-template<class Impl>
+template <class Impl>
 void
 WorkBase<Impl>::onStart()
 {
     req_.method(boost::beast::http::verb::get);
     req_.target(path_.empty() ? "/" : path_);
     req_.version(11);
-    req_.set (
-        "Host", host_ + ":" + port_);
-    req_.set ("User-Agent", BuildInfo::getFullVersionString());
+    req_.set("Host", host_ + ":" + port_);
+    req_.set("User-Agent", BuildInfo::getFullVersionString());
     req_.prepare_payload();
-    boost::beast::http::async_write(impl().stream(), req_,
-        strand_.wrap (std::bind (&WorkBase::onRequest,
-            impl().shared_from_this(), std::placeholders::_1)));
+    boost::beast::http::async_write(
+        impl().stream(),
+        req_,
+        strand_.wrap(std::bind(
+            &WorkBase::onRequest,
+            impl().shared_from_this(),
+            std::placeholders::_1)));
 }
 
-template<class Impl>
+template <class Impl>
 void
 WorkBase<Impl>::onRequest(error_code const& ec)
 {
     if (ec)
         return fail(ec);
 
-    boost::beast::http::async_read (impl().stream(), read_buf_, res_,
-        strand_.wrap (std::bind (&WorkBase::onResponse,
-            impl().shared_from_this(), std::placeholders::_1)));
+    boost::beast::http::async_read(
+        impl().stream(),
+        readBuf_,
+        res_,
+        strand_.wrap(std::bind(
+            &WorkBase::onResponse,
+            impl().shared_from_this(),
+            std::placeholders::_1)));
 }
 
-template<class Impl>
+template <class Impl>
 void
 WorkBase<Impl>::onResponse(error_code const& ec)
 {
     if (ec)
         return fail(ec);
 
+    close();
     assert(cb_);
-    cb_(ec, std::move(res_));
+    cb_(ec, lastEndpoint_, std::move(res_));
     cb_ = nullptr;
 }
 
-} // detail
+template <class Impl>
+void
+WorkBase<Impl>::close()
+{
+    if (socket_.is_open())
+    {
+        error_code ec;
+        socket_.shutdown(boost::asio::socket_base::shutdown_send, ec);
+        if (ec)
+            return;
+        socket_.close(ec);
+    }
+}
 
-} // ripple
+}  // namespace detail
+
+}  // namespace ripple
 
 #endif

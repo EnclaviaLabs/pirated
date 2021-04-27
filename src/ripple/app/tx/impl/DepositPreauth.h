@@ -24,33 +24,33 @@
 
 namespace ripple {
 
-class DepositPreauth
-    : public Transactor
+class DepositPreauth : public Transactor
 {
 public:
-    explicit DepositPreauth (ApplyContext& ctx)
-        : Transactor(ctx)
+    static constexpr ConsequencesFactoryType ConsequencesFactory{Normal};
+
+    explicit DepositPreauth(ApplyContext& ctx) : Transactor(ctx)
     {
     }
 
-    static
-    NotTEC
-    preflight (PreflightContext const& ctx);
+    static NotTEC
+    preflight(PreflightContext const& ctx);
 
-    static
-    TER
+    static TER
     preclaim(PreclaimContext const& ctx);
 
-    TER doApply () override;
+    TER
+    doApply() override;
 
     // Interface used by DeleteAccount
-    static
-    TER
-    removeFromLedger (Application& app, ApplyView& view,
-        uint256 const& delIndex, beast::Journal j);
+    static TER
+    removeFromLedger(
+        Application& app,
+        ApplyView& view,
+        uint256 const& delIndex,
+        beast::Journal j);
 };
 
-} // ripple
+}  // namespace ripple
 
 #endif
-

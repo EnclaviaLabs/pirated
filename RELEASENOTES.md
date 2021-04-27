@@ -1,18 +1,190 @@
 # Release Notes
 
-![Ripple](docs/images/ripple.png)
+![XRP](docs/images/xrp-text-mark-black-small@2x.png)
 
-This document contains the release notes for `rippled`, the reference server implementation of the Ripple protocol. To learn more about how to build and run a `rippled` server, visit https://ripple.com/build/rippled-setup/
+This document contains the release notes for `rippled`, the reference server implementation of the Ripple protocol. To learn more about how to build, run or update a `rippled` server, visit https://xrpl.org/install-rippled.html
 
-> **Do you work at a digital asset exchange or wallet provider?** 
-> 
-> Please [contact us](mailto:support@ripple.com). We can help guide your integration.
-
-## Updating `rippled`
-
-If you are using Red Hat Enterprise Linux 7 or CentOS 7, you can [update using `yum`](https://ripple.com/build/rippled-setup/#updating-rippled). For other platforms, please [compile from source](https://wiki.ripple.com/Rippled_build_instructions).
+ 
+Have new ideas? Need help with setting up your node? Come visit us [here](https://github.com/ripple/rippled/issues/new/choose)
 
 # Releases
+
+## Version 1.7.0 
+
+Ripple has released version 1.7.0 of `rippled`, the reference server implementation of the XRP Ledger protocol. 
+This release [significantly improves memory usage](https://blog.ripplex.io/how-ripples-c-team-cut-rippleds-memory-footprint-down-to-size/), introduces a protocol amendment to allow out-of-order transaction execution with Tickets, and brings several other features and improvements. 
+
+## Upgrading (SPECIAL ACTION REQUIRED)
+If you use the precompiled binaries of rippled that Ripple publishes for supported platforms, please note that Ripple has renewed the GPG key used to sign these packages. 
+If you are upgrading from a previous install, you must download and trust the renewed key. Automatic upgrades will not work until you have re-trusted the key.
+### Red Hat Enterprise Linux / CentOS
+
+Perform a [manual upgrade](https://xrpl.org/update-rippled-manually-on-centos-rhel.html). When prompted, confirm that the key's fingerprint matches the following example, then press `y` to accept the updated key:
+
+```
+$ sudo yum install rippled
+Loaded plugins: fastestmirror
+Loading mirror speeds from cached hostfile
+* base: mirror.web-ster.com
+* epel: mirrors.syringanetworks.net
+* extras: ftp.osuosl.org
+* updates: mirrors.vcea.wsu.edu
+ripple-nightly/signature                                                                                                                                                                                                                                 |  650 B  00:00:00    
+Retrieving key from https://repos.ripple.com/repos/rippled-rpm/nightly/repodata/repomd.xml.key
+Importing GPG key 0xCCAFD9A2:
+Userid     : "TechOps Team at Ripple <techops+rippled@ripple.com>"
+Fingerprint: c001 0ec2 05b3 5a33 10dc 90de 395f 97ff ccaf d9a2
+From       : https://repos.ripple.com/repos/rippled-rpm/nightly/repodata/repomd.xml.key
+Is this ok [y/N]: y
+```
+
+### Ubuntu / Debian
+
+Download and trust the updated public key, then perform a [manual upgrade](https://xrpl.org/update-rippled-manually-on-ubuntu.html) as follows:
+
+```
+wget -q -O - "https://repos.ripple.com/repos/api/gpg/key/public" | \
+    sudo apt-key add -
+sudo apt -y update
+sudo apt -y install rippled
+```
+
+### New and Improved Features
+
+- **Rework deferred node logic and async fetch behavior:** This change significantly improves ledger sync and fetch times while reducing memory consumption.  (https://blog.ripplex.io/how-ripples-c-team-cut-rippleds-memory-footprint-down-to-size/)
+- **New Ticket feature:** Tickets are a mechanism to prepare and send certain transactions outside of the normal sequence order. This version reworks and completes the implementation for Tickets after more than 6 years of development. This feature is now open for voting as the newly-introduced `TicketBatch` amendment, which replaces the previously-proposed `Tickets` amendment. The specification for this change can be found at: [xrp-community/standards-drafts#16](https://github.com/xrp-community/standards-drafts/issues/16)
+- **Add Reporting Mode:** The server can be compiled to operate in a new mode that serves API requests for validated ledger data without connecting directly to the peer-to-peer network. (The server needs a gRPC connection to another server that is on the peer-to-peer network.) Reporting Mode servers can share access to ledger data via Apache Cassandra and PostgreSQL to more efficiently serve API requests while peer-to-peer servers specialize in broadcasting and processing transactions.
+- **Optimize relaying of validation and proposal messages:** Servers typically receive multiple copies of any given message from directly connected peers; in particular, consensus proposal and validation messages are often relayed with extremely high redundancy. For servers with several peers, this can cause redundant work. This commit introduces experimental code that attempts to optimize the relaying of proposals and validations by allowing servers to instruct their peers to "squelch" delivery of selected proposals and validations. This change is considered experimental at this time and is disabled by default because the functioning of the consensus network depends on messages propagating with high reliability through the constantly-changing peer-to-peer network. Server operators who wish to test the optimized code can enable it in their server config file.
+- **Report server domain to other servers:** Server operators now have the option to configure a domain name to be associated with their servers. The value is communicated to other servers and is also reported via the `server_info` API. The value is meant for third-party applications and tools to group servers together. For example, a tool that visualizes the network's topology can show how many servers are operated by different stakeholders. An operator can claim any domain, so tools should use the [xrp-ledger.toml file](https://xrpl.org/xrp-ledger-toml.html) to confirm that the domain also claims ownership of the servers.
+- **Improve handling of peers that aren't synced:** When evaluating the fitness and usefulness of an outbound peer, the code would incorrectly calculate the amount of time that the peer spent in a non-useful state. This release fixes the calculation and makes the timeout values configurable by server operators. Two new options are introduced in the 'overlay' stanza of the config file. 
+- **Persist API-configured voting settings:** Previously, the amendments that a server would vote in support of or against could be configured both via the configuration file and via the ["feature" API method](https://xrpl.org/feature.html). Changes made in the configuration file were only loaded at server startup; changes made via the command line take effect immediately but were not persisted across restarts. Starting with this release, changes made via the API are saved to the wallet.db database file so that they persist even if the server is restarted.
+Amendment voting in the config file is deprecated. The first time the server starts with v1.7.0 or higher, it reads any amendment voting settings in the config file and saves the settings to the database; on later restarts the server prints a warning message and ignores the [amendments] and [veto_amendments] stanzas of the config file.
+Going forward, use the [feature method](https://xrpl.org/feature.html) to view and configure amendment votes. If you want to use the config file to configure amendment votes, add a line to the [rpc_startup] stanza such as the following:
+[rpc_startup]
+{ "command": "feature", "feature": "FlowSortStrands", "vetoed": true }
+- **Support UNLs with future effective dates:** Updates the format for the recommended validator list file format, allowing publishers to pre-publish the next recommended UNL while the current one is still valid. The server is still backwards compatible with the previous format, but the new format removes some uncertainty during the transition from one list to the next. Also, starting with this release, the server locks down and reports an error if it has no valid validator list. You can clear the error by loading a validator list from a file or by configuring a different UNL and restarting; the error also goes away on its own if the server is able to obtain a trusted validator list from the network (for example, after an network outage resolves itself).
+- **Improve manifest relaying:** Servers now propagate change messages for validators' ephemeral public keys ("manifests") on a best-effort basis, to make manifests more available throughout the peer-to-peer network. Previously, the server would only relay manifests from validators it trusts locally, which made it difficult to detect and track validators that are not broadly trusted.
+- **Implement ledger forward replay feature:** The server can now sync up to the network by "playing forward" transactions from a previously saved ledger until it catches up to the network. Compared with the default behavior of fetching the latest state and working backwards, forward replay can save time and bandwidth by reconstructing previous ledgers' state data rather than downloading the pre-calculated results from the network. As an added bonus, forward replay confirms that the rest of the network followed the same transaction processing rules as the local server when processing the intervening ledgers. This feature is considered experimental this time and can be enabled with an option in the config file.
+- **Make the transaction job queue limit adjustable:** The server uses a job queue to manage tasks, with limits on how many jobs of a particular type can be queued. The previously hard-coded limit associated with transactions is now configurable. Server operators can increase the number of transactions their server is able to queue, which may be useful if your server has a large memory capacity or you expect an influx of transactions. (https://github.com/ripple/rippled/issues/3556)
+- **Add public_key to the Validator List method response:** The [Validator List method](https://xrpl.org/validator-list.html) can be used to request a recommended validator list from a rippled instance. The response now includes the public key of the requested list. (https://github.com/ripple/rippled/issues/3392)
+- **Server operators can now configure maximum inbound and outbound peers separately:** The new `peers_in_max` and `peers_out_max` config options allow server operators to independently control the maximum number of inbound and outbound peers the server allows. [70c4ecc]
+- **Improvements to shard downloading:** Previously the download_shard command could only load shards over HTTPS. Compressed shards can now also be downloaded over plain HTTP. The server fully checks the data for integrity and consistency, so the encryption is not strictly necessary. When initiating multiple shard downloads, the server now returns an error if there is not enough space to store all the shards currently being downloaded.
+- **The manifest command is now public:** The manifest API method returns public information about a given validator. The required permissions have been changed so it is now part of the public API.
+
+### Bug Fixes
+
+- **Implement sticky DNS resolution for validator list retrieval:** When attempting to load a validator list from a configured site, attempt to reuse the last IP that was successfully used if that IP is still present in the DNS response. (https://github.com/ripple/rippled/issues/3494).
+- **Improve handling of RPC ledger_index argument:** You can now provide the `ledger_index` as a numeric string. This allows you to copy and use the numeric string `ledger_index` value returned by certain RPC commands. Previously you could only send native JSON numbers or shortcut strings such as "validated" in the `ledger_index` field. (https://github.com/ripple/rippled/issues/3533)
+- **Fix improper promotion of bool on return**  [6968da1]
+- **Fix ledger sequence on copynode** [ef53197] 
+-  **Fix parsing of node public keys in `manifest` CLI:** The previous code attempts to validate the provided node public key using a function that assumes that the encoded public key is for an account. This causes the parsing to fail. This commit fixes #3317 (https://github.com/ripple/rippled/issues/3317) by letting the caller specify the type of the public key being checked.
+- **Fix idle peer timer:** Fixes a bug where a function to remove idle peers was called every second instead of every 4 seconds. #3754 (https://github.com/ripple/rippled/issues/3754)
+- **Add database counters:** Fix bug where DatabaseRotateImp::getBackend and ::sync utilized the writable backend without a lock. ::getBackend was replaced with ::getCounters.
+- **Improve online_delete configuration and DB tuning** [6e9051e]
+- **Improve handling of burst writes in NuDB database** ( https://github.com/ripple/rippled/pull/3662 )
+- **Fix excessive logging after disabling history shards.** Previously if you configured the server with a shard store, then disabled it, the server output excessive warning messages about the shard limit being exceeded.
+- **Fixed some issues with negotiating link compression.** ( https://github.com/ripple/rippled/pull/3705 )
+- **Fixed a potential thread deadlock with history sharding.** ( https://github.com/ripple/rippled/pull/3683 )
+- **Various fixes to typos and comments, refactoring, and build system improvements**
+
+## Version 1.6.0
+
+This release introduces several new features including changes to the XRP Ledger's consensus mechanism to make it even more robust in 
+adverse conditions, as well as numerous bug fixes and optimizations.
+
+### New and Improved Features
+
+- Initial implementation of Negative UNL functionality: This change can improve the liveness of the network during periods of network instability, by allowing servers to track which validators are temporarily offline and to adjust quorum calculations to match. This change requires an amendment, but the amendment is not in the **1.6.0** release. Ripple expects to run extensive public testing for Negative UNL functionality on the Devnet in the coming weeks. If public testing satisfies all requirements across security, reliability, stability, and performance, then the amendment could be included in a version 2.0 release. [[#3380](https://github.com/ripple/rippled/pull/3380)]
+- Validation Hardening: This change allows servers to detect accidental misconfiguration of validators, as well as potentially Byzantine behavior by malicious validators. Servers can now log a message to notify operators if they detect a single validator issuing validations for multiple, incompatible ledger versions, or validations from multiple servers sharing a key. As part of this update, validators report the version of `rippled` they are using, as well as the hash of the last ledger they consider to be fully validated, in validation messages. [[#3291](https://github.com/ripple/rippled/pull/3291)] ![Amendment: Required](https://img.shields.io/badge/Amendment-Required-red)
+- Software Upgrade Monitoring & Notification: After the `HardenedValidations` amendment is enabled and the validators begin reporting the versions of `rippled` they are running, a server can check how many of the validators on its UNL run a newer version of the software than itself. If more than 60% of a server's validators are running a newer version, the server writes a message to notify the operator to consider upgrading their software. [[#3447](https://github.com/ripple/rippled/pull/3447)]
+- Link Compression: Beginning with **1.6.0**, server operators can enable support for compressing peer-to-peer messages. This can save bandwidth at a cost of higher CPU usage. This support is disabled by default and should prove useful for servers with a large number of peers. [[#3287](https://github.com/ripple/rippled/pull/3287)]
+- Unconditionalize Amendments that were enabled in 2017: This change removes legacy code which the network has not used since 2017. This change limits the ability to [replay](https://github.com/xrp-community/standards-drafts/issues/14) ledgers that rely on the pre-2017 behavior. [[#3292](https://github.com/ripple/rippled/pull/3292)]
+- New Health Check Method: Perform a simple HTTP request to get a summary of the health of the server: Healthy, Warning, or Critical. [[#3365](https://github.com/ripple/rippled/pull/3365)]
+- Start work on API version 2. Version 2 of the API will be part of a future release. The first breaking change will be to consolidate several closely related error messages that can occur when the server is not synced into a single "notSynced" error message. [[#3269](https://github.com/ripple/rippled/pull/3269)]
+- Improved shard concurrency: Improvements to the shard engine have helped reduce the lock scope on all public functions, increasing the concurrency of the code. [[#3251](https://github.com/ripple/rippled/pull/3251)]
+- Default Port: In the config file, the `[ips_fixed]` and `[ips]` stanzas now use the [IANA-assigned port](https://www.iana.org/assignments/service-names-port-numbers/service-names-port-numbers.xhtml?search=2459) for the XRP Ledger protocol (2459) when no port is specified. The `connect` API method also uses the same port by default. [[#2861](https://github.com/ripple/rippled/pull/2861)].
+- Improve proposal and validation relaying. The peer-to-peer protocol always relays trusted proposals and validations (as part of the [consensus process](https://xrpl.org/consensus.html)), but only relays _untrusted_ proposals and validations in certain circumstances. This update adds configuration options so server operators can fine-tune how their server handles untrusted proposals and validations, and changes the default behavior to prioritize untrusted validations higher than untrusted proposals.  [[#3391](https://github.com/ripple/rippled/pull/3391)]
+- Various Build and CI Improvements including updates to RocksDB 6.7.3 [[#3356](https://github.com/ripple/rippled/pull/3356)], NuDB 2.0.3 [[#3437](https://github.com/ripple/rippled/pull/3437)], adjusting CMake settings so that rippled can be built as a submodule [[#3449](https://github.com/ripple/rippled/pull/3449)], and adding Travis CI settings for Ubuntu Bionic Beaver [[#3319](https://github.com/ripple/rippled/pull/3319)].
+- Better documentation in the config file for online deletion and database tuning. [[#3429](https://github.com/ripple/rippled/pull/3429)]
+
+
+### Bug Fixes
+
+- Fix the 14 day timer to enable amendment to start at the correct quorum size [[#3396](https://github.com/ripple/rippled/pull/3396)]
+- Improve online delete backend lock which addresses a possibility in the online delete process where one or more backend shared pointer references may become invalid during rotation. [[#3342](https://github.com/ripple/rippled/pull/3342)]
+- Address an issue that can occur during the loading of validator tokens, where a deliberately malformed token could cause the server to crash during startup. [[#3326](https://github.com/ripple/rippled/pull/3326)]
+- Add delivered amount to GetAccountTransactionHistory. The delivered_amount field was not being populated when calling GetAccountTransactionHistory. In contrast, the delivered_amount field was being populated when calling GetTransaction. This change populates delivered_amount in the response to GetAccountTransactionHistory, and adds a unit test to make sure the results delivered by GetTransaction and GetAccountTransactionHistory match each other. [[#3370](https://github.com/ripple/rippled/pull/3370)]
+- Fix build issues for GCC 10 [[#3393](https://github.com/ripple/rippled/pull/3393)]
+- Fix historical ledger acquisition - this fixes an issue where historical ledgers were acquired only since the last online deletion interval instead of the configured value to allow deletion.[[#3369](https://github.com/ripple/rippled/pull/3369)]
+- Fix build issue with Docker [#3416](https://github.com/ripple/rippled/pull/3416)]
+- Add Shard family. The App Family utilizes a single shared Tree Node and Full Below cache for all history shards. This can create a problem when acquiring a shard that shares an account state node that was recently cached from another shard operation. The new Shard Family class solves this issue by managing separate Tree Node and Full Below caches for each shard. [#3448](https://github.com/ripple/rippled/pull/3448)]
+- Amendment table clean up which fixes a calculation issue with majority. [#3428](https://github.com/ripple/rippled/pull/3428)]
+- Add the `ledger_cleaner` command to rippled command line help [[#3305](https://github.com/ripple/rippled/pull/3305)]
+- Various typo and comments fixes.
+
+
+## Version 1.5.0
+
+The `rippled` 1.5.0 release introduces several improvements and new features, including support for gRPC API, API versioning, UNL propagation via the peer network, new RPC methods `validator_info` and `manifest`, augmented `submit` method, improved `tx` method response, improved command line parsing, improved handshake protocol, improved package building and various other minor bug fixes and improvements.
+
+This release also introduces two new amendments: `fixQualityUpperBound` and `RequireFullyCanonicalSig`.
+
+Several improvements to the sharding system are currently being evaluated for inclusion into the upcoming 1.6 release of `rippled`. These changes are incompatible with shards generated by previous versions of the code. 
+Additionally, an issue with the existing sharding engine can result in a server running versions 1.4 or 1.5 of the software to experience a deadlock and automatically restart when running with the sharding feature enabled. 
+At this time, the developers recommend running with sharding disabled, pending the improvements scheduled to be introduced with 1.6. For more information on how to disable sharding, please visit https://xrpl.org/configure-history-sharding.html
+
+ 
+**New and Updated Features**
+- The `RequireFullyCanonicalSig` amendment which changes the signature requirements for the XRP Ledger protocol so that non-fully-canonical signatures are no longer valid. This protects against transaction malleability on all transactions, instead of just transactions with the tfFullyCanonicalSig flag enabled. Without this amendment, a transaction is malleable if it uses a secp256k1 signature and does not have tfFullyCanonicalSig enabled. Most signing utilities enable tfFullyCanonicalSig by default, but there are exceptions. With this amendment, no single-signed transactions are malleable. (Multi-signed transactions may still be malleable if signers provide more signatures than are necessary.) All transactions must use the fully canonical form of the signature, regardless of the tfFullyCanonicalSig flag. Signing utilities that do not create fully canonical signatures are not supported. All of Ripple's signing utilities have been providing fully-canonical signatures exclusively since at least 2014. For more information. [`ec137044a`](https://github.com/ripple/rippled/commit/ec137044a014530263cd3309d81643a5a3c1fdab)
+- Native [gRPC API](https://grpc.io/) support. Currently, this API provides a subset of the full `rippled` [API](https://xrpl.org/rippled-api.html). You can enable the gRPC API on your server with a new configuration stanza. [`7d867b806`](https://github.com/ripple/rippled/commit/7d867b806d70fc41fb45e3e61b719397033b272c)
+- API Versioning which allows for future breaking change of RPC methods to co-exist with existing versions. [`2aa11fa41`](https://github.com/ripple/rippled/commit/2aa11fa41d4a7849ae6a5d7a11df6f367191e3ef)
+- Nodes now receive and broadcast UNLs over the peer network under various conditions. [`2c71802e3`](https://github.com/ripple/rippled/commit/2c71802e389a59118024ea0152123144c084b31c)
+- Augmented `submit` method to include additional details on the status of the command. [`79e9085dd`](https://github.com/ripple/rippled/commit/79e9085dd1eb72864afe841225b78ec96e72b5ca)
+- Improved `tx` method response with additional details on ledgers searched. [`47501b7f9`](https://github.com/ripple/rippled/commit/47501b7f99d4103d9ad405e399169fc251161548)
+- New `validator_info` method which returns information pertaining to the current validator's keys, manifest sequence, and domain. [`3578acaf0`](https://github.com/ripple/rippled/commit/3578acaf0b5f2d27ddc33f5b4cc81d21be1903ae)
+- New `manifest` method which looks up manifest information for the specified key (either master or ephemeral). [`3578acaf0`](https://github.com/ripple/rippled/commit/3578acaf0b5f2d27ddc33f5b4cc81d21be1903ae)
+- Introduce handshake protocol for compression negotiation (compression is not implemented at this point) and other minor improvements. [`f6916bfd4`](https://github.com/ripple/rippled/commit/f6916bfd429ce654e017ae9686cb023d9e05408b)
+- Remove various old conditionals introduced by amendments. [`(51ed7db00`](https://github.com/ripple/rippled/commit/51ed7db0027ba822739bd9de6f2613f97c1b227b), [`6e4945c56)`](https://github.com/ripple/rippled/commit/6e4945c56b1a1c063b32921d7750607587ec3063)
+- Add `getRippledInfo` info gathering script to `rippled` Linux packages. [`acf4b7889`](https://github.com/ripple/rippled/commit/acf4b78892074303cb1fa22b778da5e7e7eddeda)
+
+**Bug Fixes and Improvements**
+- The `fixQualityUpperBound` amendment which fixes a bug in unused code for estimating the ratio of input to output of individual steps in cross-currency payments. [`9d3626fec`](https://github.com/ripple/rippled/commit/9d3626fec5b610100f401dc0d25b9ec8e4a9a362)
+- `tx` method now properly fetches all historical tx if they are incorporated into a validated ledger under rules that applied at the time. [`11cf27e00`](https://github.com/ripple/rippled/commit/11cf27e00698dbfc099b23463927d1dac829ed19)
+- Fix to how `fail_hard` flag is handled with the `submit` method - transactions that are submitted with the `fail_hard` flag that result in any TER code besides tesSUCCESS is neither queued nor held. [`cd9732b47`](https://github.com/ripple/rippled/commit/cd9732b47a9d4e95bcb74e048d2c76fa118b80fb)
+- Remove unused `Beast` code. [`172ead822`](https://github.com/ripple/rippled/commit/172ead822159a3c1f9b73217da4316df48851ab6)
+- Lag ratchet code fix to use proper ephemeral public keys instead of the long-term master public keys.[`6529d3e6f`](https://github.com/ripple/rippled/commit/6529d3e6f7333fc5226e5aa9ae65f834cb93dfe5)
+
+
+## Version 1.4.0
+
+The `rippled` 1.4.0 release introduces several improvements and new features, including support for deleting accounts, improved peer slot management, improved CI integration and package building and support for [C++17](https://en.wikipedia.org/wiki/C%2B%2B17) and [Boost 1.71](https://www.boost.org/users/history/version_1_71_0.html). Finally, this release removes the code for the `SHAMapV2` amendment which failed to gain majority support and has been obsoleted by other improvements.
+ 
+**New and Updated Features**
+- The `DeletableAccounts` amendment which, if enabled, will make it possible for users to delete unused or unneeded accounts, recovering the account's reserve.
+- Support for improved management of peer slots and the ability to add and removed reserved connections without requiring a restart of the server.
+- Tracking and reporting of cumulative and instantaneous peer bandwidth usage. 
+- Preliminary support for post-processing historical shards after downloading to index their contents.
+- Reporting the master public key alongside the ephemeral public key in the `validation` stream [subscriptions](https://xrpl.org/subscribe.html).
+- Reporting consensus phase changes in the `server` stream [subscription](https://xrpl.org/subscribe.html).
+
+**Bug Fixes**
+- The `fixPayChanRecipientOwnerDir` amendment which corrects a minor technical flaw that would cause a payment channel to not appear in the recipient's owner directory, which made it unnecessarily difficult for users to enumerate all their payment channels.
+- The `fixCheckThreading` amendment which corrects a minor technical flaw that caused checks to not be properly threaded against the account of the check's recipient.
+- Respect the `ssl_verify` configuration option in the `SSLHTTPDownloader` and `HTTPClient` classes.
+- Properly update the `server_state` when a server detects a disagreement between itself and the network.
+- Allow Ed25519 keys to be used with the `channel_authorize` command.
+
+## Version 1.3.1
+
+The `rippled` 1.3.1 release improves the built-in deadlock detection code, improves logging during process startup, changes the package build pipeline and improves the build documentation.
+
+**New and Updated Features**
+
+This release has no new features.
+
+**Bug Fixes**
+- Add a LogicError when a deadlock is detected (355a7b04)
+- Improve logging during process startup (7c24f7b1)
 
 ## Version 1.3.0
 The `rippled` 1.3.0 release introduces several new features and overall improvements to the codebase, including the `fixMasterKeyAsRegularKey` amendment, code to adjust the timing of the consensus process and support for decentralized validator domain verification. The release also includes miscellaneous improvements including in the transaction censorship detection code, transaction validation code, manifest parsing code, configuration file parsing code, log file rotation code, and in the build, continuous integration, testing and package building pipelines.
@@ -24,7 +196,7 @@ The `rippled` 1.3.0 release introduces several new features and overall improvem
 
 **Bug Fixes**
 - Improve ledger trie ancestry tracking to reduce unnecessary error messages.
-- More efficient detection of dry paths in the payment engine. Although not a transaction-breaking change, this should reduces spurious error messages in the log files.
+- More efficient detection of dry paths in the payment engine. Although not a transaction-breaking change, this should reduce spurious error messages in the log files.
 
 ## Version 1.2.4
 

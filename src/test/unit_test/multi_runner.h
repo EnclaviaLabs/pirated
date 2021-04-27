@@ -51,9 +51,7 @@ struct case_results
     std::size_t total = 0;
     std::size_t failed = 0;
 
-    explicit
-    case_results(std::string name_ = "")
-        : name(std::move(name_))
+    explicit case_results(std::string name_ = "") : name(std::move(name_))
     {
     }
 };
@@ -66,9 +64,7 @@ struct suite_results
     std::size_t failed = 0;
     typename clock_type::time_point start = clock_type::now();
 
-    explicit
-    suite_results(std::string name_ = "")
-        : name(std::move(name_))
+    explicit suite_results(std::string name_ = "") : name(std::move(name_))
     {
     }
 
@@ -116,8 +112,8 @@ class multi_runner_base
         std::atomic<bool> any_failed_{false};
         // A parent process will periodically increment `keep_alive_`. The child
         // processes will check if `keep_alive_` is being incremented. If it is
-        // not incremented for a sufficiently long time, the child will assume the
-        // parent process has died.
+        // not incremented for a sufficiently long time, the child will assume
+        // the parent process has died.
         std::atomic<std::size_t> keep_alive_{0};
 
         mutable boost::interprocess::interprocess_mutex m_;
@@ -135,6 +131,12 @@ class multi_runner_base
         void
         any_failed(bool v);
 
+        std::size_t
+        tests() const;
+
+        std::size_t
+        suites() const;
+
         void
         inc_keep_alive_count();
 
@@ -150,9 +152,10 @@ class multi_runner_base
     };
 
     static constexpr const char* shared_mem_name_ = "RippledUnitTestSharedMem";
-    // name of the message queue a multi_runner_child will use to communicate with
-    // multi_runner_parent
-    static constexpr const char* message_queue_name_ = "RippledUnitTestMessageQueue";
+    // name of the message queue a multi_runner_child will use to communicate
+    // with multi_runner_parent
+    static constexpr const char* message_queue_name_ =
+        "RippledUnitTestMessageQueue";
 
     // `inner_` will be created in shared memory
     inner* inner_;
@@ -163,8 +166,9 @@ class multi_runner_base
 protected:
     std::unique_ptr<boost::interprocess::message_queue> message_queue_;
 
-    enum class MessageType : std::uint8_t {test_start, test_end, log};
-    void message_queue_send(MessageType mt, std::string const& s);
+    enum class MessageType : std::uint8_t { test_start, test_end, log };
+    void
+    message_queue_send(MessageType mt, std::string const& s);
 
 public:
     multi_runner_base();
@@ -194,15 +198,24 @@ public:
 
     bool
     any_failed() const;
+
+    std::size_t
+    tests() const;
+
+    std::size_t
+    suites() const;
+
+    void
+    add_failures(std::size_t failures);
 };
 
-}  // detail
+}  // namespace detail
 
 //------------------------------------------------------------------------------
 
 /** Manager for children running unit tests
  */
-class multi_runner_parent : private detail::multi_runner_base</*IsParent*/true>
+class multi_runner_parent : private detail::multi_runner_base</*IsParent*/ true>
 {
 private:
     // message_queue_ is used to collect log messages from the children
@@ -211,6 +224,7 @@ private:
     std::thread message_queue_thread_;
     // track running suites so if a child crashes the culprit can be flagged
     std::set<std::string> running_suites_;
+
 public:
     multi_runner_parent(multi_runner_parent const&) = delete;
     multi_runner_parent&
@@ -221,6 +235,15 @@ public:
 
     bool
     any_failed() const;
+
+    std::size_t
+    tests() const;
+
+    std::size_t
+    suites() const;
+
+    void
+    add_failures(std::size_t failures);
 };
 
 //------------------------------------------------------------------------------
@@ -249,6 +272,15 @@ public:
 
     multi_runner_child(std::size_t num_jobs, bool quiet, bool print_log);
     ~multi_runner_child();
+
+    std::size_t
+    tests() const;
+
+    std::size_t
+    suites() const;
+
+    void
+    add_failures(std::size_t failures);
 
     template <class Pred>
     bool
@@ -319,8 +351,7 @@ multi_runner_child::run_multi(Pred pred)
     return failed;
 }
 
-
-}  // unit_test
-}  // beast
+}  // namespace test
+}  // namespace ripple
 
 #endif

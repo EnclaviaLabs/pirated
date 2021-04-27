@@ -20,10 +20,12 @@
 #ifndef RIPPLE_APP_CONSENSUS_LEDGERS_TRIE_H_INCLUDED
 #define RIPPLE_APP_CONSENSUS_LEDGERS_TRIE_H_INCLUDED
 
+#include <ripple/basics/ToString.h>
+#include <ripple/basics/tagged_integer.h>
 #include <ripple/json/json_value.h>
-#include <boost/optional.hpp>
 #include <algorithm>
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <stack>
 #include <vector>
@@ -114,14 +116,14 @@ public:
     }
 
     // Return the Span from [spot,end_) or none if no such valid span
-    boost::optional<Span>
+    std::optional<Span>
     from(Seq spot) const
     {
         return sub(spot, end_);
     }
 
     // Return the Span from [start_,spot) or none if no such valid span
-    boost::optional<Span>
+    std::optional<Span>
     before(Seq spot) const
     {
         return sub(start_, spot);
@@ -165,14 +167,14 @@ private:
     }
 
     // Return a span of this over the half-open interval [from,to)
-    boost::optional<Span>
+    std::optional<Span>
     sub(Seq from, Seq to) const
     {
         Seq newFrom = clamp(from);
         Seq newTo = clamp(to);
         if (newFrom < newTo)
             return Span(newFrom, newTo, ledger_);
-        return boost::none;
+        return std::nullopt;
     }
 
     friend std::ostream&
@@ -467,9 +469,9 @@ public:
         //  a b c  | g h i
         //  prefix | newSuffix
 
-        boost::optional<Span> prefix = loc->span.before(diffSeq);
-        boost::optional<Span> oldSuffix = loc->span.from(diffSeq);
-        boost::optional<Span> newSuffix = Span{ledger}.from(diffSeq);
+        std::optional<Span> prefix = loc->span.before(diffSeq);
+        std::optional<Span> oldSuffix = loc->span.from(diffSeq);
+        std::optional<Span> newSuffix = Span{ledger}.from(diffSeq);
 
         if (oldSuffix)
         {
@@ -566,8 +568,7 @@ public:
             else if (loc->children.size() == 1)
             {
                 // This node can be combined with its child
-                std::unique_ptr<Node> child =
-                    std::move(loc->children.front());
+                std::unique_ptr<Node> child = std::move(loc->children.front());
                 child->span = merge(loc->span, child->span);
                 child->parent = parent;
                 parent->children.emplace_back(std::move(child));
@@ -608,7 +609,7 @@ public:
             Seq diffSeq;
             std::tie(loc, diffSeq) = find(ledger);
             // Check that ledger is a proper prefix of loc
-            if (! (diffSeq > ledger.seq() && ledger.seq() < loc->span.end()))
+            if (!(diffSeq > ledger.seq() && ledger.seq() < loc->span.end()))
                 loc = nullptr;
         }
         return loc ? loc->branchSupport : 0;
@@ -671,13 +672,13 @@ public:
         @param largestIssued The sequence number of the largest validation
                              issued by this node.
         @return Pair with the sequence number and ID of the preferred ledger or
-                boost::none if no preferred ledger exists
+                std::nullopt if no preferred ledger exists
     */
-    boost::optional<SpanTip<Ledger>>
+    std::optional<SpanTip<Ledger>>
     getPreferred(Seq const largestIssued) const
     {
         if (empty())
-            return boost::none;
+            return std::nullopt;
 
         Node* curr = root.get();
 

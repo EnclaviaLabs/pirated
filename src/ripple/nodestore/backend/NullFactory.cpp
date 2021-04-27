@@ -35,12 +35,18 @@ public:
     std::string
     getName() override
     {
-        return std::string ();
+        return std::string();
     }
 
     void
     open(bool createIfMissing) override
     {
+    }
+
+    bool
+    isOpen() override
+    {
+        return false;
     }
 
     void
@@ -49,7 +55,7 @@ public:
     }
 
     Status
-    fetch (void const*, std::shared_ptr<NodeObject>*) override
+    fetch(void const*, std::shared_ptr<NodeObject>*) override
     {
         return notFound;
     }
@@ -60,30 +66,34 @@ public:
         return false;
     }
 
-    std::vector<std::shared_ptr<NodeObject>>
-    fetchBatch (std::size_t n, void const* const* keys) override
+    std::pair<std::vector<std::shared_ptr<NodeObject>>, Status>
+    fetchBatch(std::vector<uint256 const*> const& hashes) override
     {
-        Throw<std::runtime_error> ("pure virtual called");
         return {};
     }
 
     void
-    store (std::shared_ptr<NodeObject> const& object) override
+    store(std::shared_ptr<NodeObject> const& object) override
     {
     }
 
     void
-    storeBatch (Batch const& batch) override
+    storeBatch(Batch const& batch) override
     {
     }
 
     void
-    for_each (std::function <void(std::shared_ptr<NodeObject>)> f) override
+    sync() override
+    {
+    }
+
+    void
+    for_each(std::function<void(std::shared_ptr<NodeObject>)> f) override
     {
     }
 
     int
-    getWriteLoad () override
+    getWriteLoad() override
     {
         return 0;
     }
@@ -124,22 +134,24 @@ public:
     }
 
     std::string
-    getName () const override
+    getName() const override
     {
         return "none";
     }
 
-    std::unique_ptr <Backend>
-    createInstance (
+    std::unique_ptr<Backend>
+    createInstance(
         size_t,
         Section const&,
-        Scheduler&, beast::Journal) override
+        std::size_t,
+        Scheduler&,
+        beast::Journal) override
     {
-        return std::make_unique <NullBackend> ();
+        return std::make_unique<NullBackend>();
     }
 };
 
 static NullFactory nullFactory;
 
-}
-}
+}  // namespace NodeStore
+}  // namespace ripple

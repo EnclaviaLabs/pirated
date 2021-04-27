@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Assumptions:
 # 1) BOOST_ROOT and BOOST_URL are already defined,
-# and contain valid values.
+# and contain valid values. BOOST_URL2 may be defined
+# as a fallback. BOOST_WGET_OPTIONS may be defined with
+# retry options if the download(s) fail on the first try.
 # 2) The last namepart of BOOST_ROOT matches the
 # folder name internal to boost's .tar.gz
 # When testing you can force a boost build by clearing travis caches:
@@ -9,6 +11,7 @@
 set -exu
 
 odir=$(pwd)
+: ${BOOST_TOOLSET:=msvc-14.1}
 
 if [[ -d "$BOOST_ROOT/lib" || -d "${BOOST_ROOT}/stage/lib" ]] ; then
     echo "Using cached boost at $BOOST_ROOT"
@@ -18,10 +21,20 @@ fi
 #fetch/unpack:
 fn=$(basename -- "$BOOST_URL")
 ext="${fn##*.}"
-wget --quiet $BOOST_URL -O /tmp/boost.tar.${ext}
+wopt="--quiet"
+wget ${wopt} $BOOST_URL -O /tmp/boost.tar.${ext} || \
+  ( [ -n "${BOOST_URL2}" ] && \
+    wget ${wopt} $BOOST_URL2 -O /tmp/boost.tar.${ext} ) || \
+  ( [ -n "${BOOST_WGET_OPTIONS}" ] &&
+    ( wget ${wopt} ${BOOST_WGET_OPTIONS} $BOOST_URL -O /tmp/boost.tar.${ext} || \
+      ( [ -n "${BOOST_URL2}" ] && \
+        wget ${wopt} ${BOOST_WGET_OPTIONS} $BOOST_URL2 -O /tmp/boost.tar.${ext} )
+    )
+  )
 cd $(dirname $BOOST_ROOT)
 rm -fr ${BOOST_ROOT}
-tar xf /tmp/boost.tar.${ext}
+mkdir ${BOOST_ROOT}
+tar xf /tmp/boost.tar.${ext} -C ${BOOST_ROOT} --strip-components 1
 cd $BOOST_ROOT
 
 BLDARGS=()
@@ -31,13 +44,13 @@ if [[ ${BOOST_BUILD_ALL:-false} == "true" ]]; then
     BLDARGS+=(--without-python)
 else
     BLDARGS+=(--with-chrono)
+    BLDARGS+=(--with-container)
     BLDARGS+=(--with-context)
     BLDARGS+=(--with-coroutine)
     BLDARGS+=(--with-date_time)
     BLDARGS+=(--with-filesystem)
     BLDARGS+=(--with-program_options)
     BLDARGS+=(--with-regex)
-    BLDARGS+=(--with-serialization)
     BLDARGS+=(--with-system)
     BLDARGS+=(--with-atomic)
     BLDARGS+=(--with-thread)
@@ -60,7 +73,7 @@ if [[ -z ${COMSPEC:-} ]]; then
 else
     BLDARGS+=(runtime-link="static,shared")
     BLDARGS+=(--layout=versioned)
-    BLDARGS+=(--toolset="msvc-14.1")
+    BLDARGS+=(--toolset="${BOOST_TOOLSET}")
     BLDARGS+=(address-model=64)
     BLDARGS+=(architecture=x86)
     BLDARGS+=(link=static)

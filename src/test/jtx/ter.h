@@ -33,17 +33,14 @@ namespace jtx {
 class ter
 {
 private:
-    boost::optional<TER> v_;
+    std::optional<TER> v_;
 
 public:
-    explicit
-    ter (decltype(std::ignore))
+    explicit ter(decltype(std::ignore))
     {
     }
 
-    explicit
-    ter (TER v)
-        : v_(v)
+    explicit ter(TER v) : v_(v)
     {
     }
 
@@ -54,8 +51,8 @@ public:
     }
 };
 
-} // jtx
-} // test
-} // ripple
+}  // namespace jtx
+}  // namespace test
+}  // namespace ripple
 
 #endif

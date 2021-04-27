@@ -3,7 +3,20 @@
 #]===================================================================]
 
 option (assert "Enables asserts, even in release builds" OFF)
-option (unity "Creates a build based on unity sources. This is the default" ON)
+
+option (reporting "Build rippled with reporting mode enabled" OFF)
+
+option (unity "Creates a build using UNITY support in cmake. This is the default" ON)
+if (unity)
+  if (CMAKE_VERSION VERSION_LESS 3.16)
+    message (WARNING "unity option only supported for with cmake 3.16+ (please upgrade)")
+    set (unity OFF CACHE BOOL "unity only available for cmake 3.16+" FORCE)
+  else ()
+    if (NOT is_ci)
+      set (CMAKE_UNITY_BUILD_BATCH_SIZE 15 CACHE STRING "")
+    endif ()
+  endif ()
+endif ()
 if (is_gcc OR is_clang)
   option (coverage "Generates coverage info." OFF)
   option (profile "Add profiling flags" OFF)
@@ -44,7 +57,9 @@ endif ()
 option (jemalloc "Enables jemalloc for heap profiling" OFF)
 option (werr "treat warnings as errors" OFF)
 option (local_protobuf
-  "Force use of a local build of protobuf instead of system version." OFF)
+  "Force a local build of protobuf instead of looking for an installed version." OFF)
+option (local_grpc
+  "Force a local build of gRPC instead of looking for an installed version." OFF)
 
 # this one is a string and therefore can't be an option
 set (san "" CACHE STRING "On gcc & clang, add sanitizer instrumentation")
@@ -86,12 +101,6 @@ option (have_package_container
 # the remaining options are obscure and rarely used
 option (beast_no_unit_test_inline
   "Prevents unit test definitions from being inserted into global table"
-  OFF)
-# NOTE - THIS OPTION CURRENTLY DOES NOT COMPILE :
-# TODO: fix or remove
-option (verify_nodeobject_keys
-  "This verifies that the hash of node objects matches the payload. \
-  This check is expensive - use with caution."
   OFF)
 option (single_io_service_thread
   "Restricts the number of threads calling io_service::run to one. \

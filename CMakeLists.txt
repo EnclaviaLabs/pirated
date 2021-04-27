@@ -1,7 +1,14 @@
 cmake_minimum_required (VERSION 3.9.0)
-list(APPEND CMAKE_MODULE_PATH ${PROJECT_SOURCE_DIR}/Builds/CMake)
 
-set (CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake ${CMAKE_MODULE_PATH})
+if (POLICY CMP0074)
+  cmake_policy(SET CMP0074 NEW)
+endif ()
+
+project (rippled)
+
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake/deps")
+
 include (CheckCXXCompilerFlag)
 if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.11)
   include (FetchContent)
@@ -13,14 +20,7 @@ include (ExternalProject)
 include (CMakeFuncs) # must come *after* ExternalProject b/c it overrides one function in EP
 include (ProcessorCount)
 if (target)
-  message (WARNING
-    "The target option is deprecated and will be removed in a future release")
-  parse_target()
-endif ()
-project (rippled)
-
-if (POLICY CMP0074)
-  cmake_policy(SET CMP0074 NEW)
+  message (FATAL_ERROR "The target option has been removed - use native cmake options to control build")
 endif ()
 
 include(RippledSanity)
@@ -52,7 +52,11 @@ include(deps/Soci)
 include(deps/Snappy)
 include(deps/Rocksdb)
 include(deps/Nudb)
+include(deps/date)
 include(deps/Protobuf)
+include(deps/gRPC)
+include(deps/cassandra)
+include(deps/Postgres)
 
 ###
 

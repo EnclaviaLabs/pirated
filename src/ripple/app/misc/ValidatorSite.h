@@ -20,17 +20,19 @@
 #ifndef RIPPLE_APP_MISC_VALIDATORSITE_H_INCLUDED
 #define RIPPLE_APP_MISC_VALIDATORSITE_H_INCLUDED
 
+#include <ripple/app/main/Application.h>
 #include <ripple/app/misc/ValidatorList.h>
 #include <ripple/app/misc/detail/Work.h>
-#include <ripple/app/main/Application.h>
 #include <ripple/basics/Log.h>
 #include <ripple/basics/StringUtilities.h>
 #include <ripple/core/Config.h>
 #include <ripple/json/json_value.h>
+
 #include <boost/asio.hpp>
-#include <boost/optional.hpp>
-#include <mutex>
+
 #include <memory>
+#include <mutex>
+#include <optional>
 
 namespace ripple {
 
@@ -46,7 +48,7 @@ namespace ripple {
     fields:
 
     @li @c "blob": Base64-encoded JSON string containing a @c "sequence", @c
-        "expiration", and @c "validators" field. @c "expiration" contains the
+        "validUntil", and @c "validators" field. @c "validUntil" contains the
         Ripple timestamp (seconds since January 1st, 2000 (00:00 UTC)) for when
         the list expires. @c "validators" contains an array of objects with a
         @c "validation_public_key" and optional @c "manifest" field.
@@ -71,6 +73,7 @@ class ValidatorSite
 private:
     using error_code = boost::system::error_code;
     using clock_type = std::chrono::system_clock;
+    using endpoint_type = boost::asio::ip::tcp::endpoint;
 
     struct Site
     {
@@ -106,11 +109,13 @@ private:
         unsigned short redirCount;
         std::chrono::minutes refreshInterval;
         clock_type::time_point nextRefresh;
-        boost::optional<Status> lastRefreshStatus;
+        std::optional<Status> lastRefreshStatus;
+        endpoint_type lastRequestEndpoint;
+        bool lastRequestSuccessful;
     };
 
     Application& app_;
-    beast::Journal j_;
+    beast::Journal const j_;
 
     std::mutex mutable sites_mutex_;
     std::mutex mutable state_mutex_;
@@ -133,11 +138,11 @@ private:
     const std::chrono::seconds requestTimeout_;
 
 public:
-    ValidatorSite (
+    ValidatorSite(
         Application& app,
-        boost::optional<beast::Journal> j = boost::none,
+        std::optional<beast::Journal> j = std::nullopt,
         std::chrono::seconds timeout = std::chrono::seconds{20});
-    ~ValidatorSite ();
+    ~ValidatorSite();
 
     /** Load configured site URIs.
 
@@ -150,8 +155,7 @@ public:
         @return `false` if an entry is invalid or unparsable
     */
     bool
-    load (
-        std::vector<std::string> const& siteURIs);
+    load(std::vector<std::string> const& siteURIs);
 
     /** Start fetching lists from sites
 
@@ -162,7 +166,7 @@ public:
         May be called concurrently
     */
     void
-    start ();
+    start();
 
     /** Wait for current fetches from sites to complete
 
@@ -171,7 +175,7 @@ public:
         May be called concurrently
     */
     void
-    join ();
+    join();
 
     /** Stop fetching lists from sites
 
@@ -182,7 +186,7 @@ public:
         May be called concurrently
     */
     void
-    stop ();
+    stop();
 
     /** Return JSON representation of configured validator sites
      */
@@ -193,24 +197,21 @@ private:
     /// Queue next site to be fetched
     /// lock over state_mutex_ required
     void
-    setTimer (std::lock_guard<std::mutex>&);
+    setTimer(std::lock_guard<std::mutex>&);
 
     /// request took too long
     void
-    onRequestTimeout (
-        std::size_t siteIdx,
-        error_code const& ec);
+    onRequestTimeout(std::size_t siteIdx, error_code const& ec);
 
     /// Fetch site whose time has come
     void
-    onTimer (
-        std::size_t siteIdx,
-        error_code const& ec);
+    onTimer(std::size_t siteIdx, error_code const& ec);
 
     /// Store latest list fetched from site
     void
-    onSiteFetch (
+    onSiteFetch(
         boost::system::error_code const& ec,
+        endpoint_type const& endpoint,
         detail::response_type&& res,
         std::size_t siteIdx);
 
@@ -224,7 +225,7 @@ private:
     /// Initiate request to given resource.
     /// lock over sites_mutex_ required
     void
-    makeRequest (
+    makeRequest(
         std::shared_ptr<Site::Resource> resource,
         std::size_t siteIdx,
         std::lock_guard<std::mutex>& lock);
@@ -232,7 +233,7 @@ private:
     /// Parse json response from validator list site.
     /// lock over sites_mutex_ required
     void
-    parseJsonResponse (
+    parseJsonResponse(
         std::string const& res,
         std::size_t siteIdx,
         std::lock_guard<std::mutex>& lock);
@@ -240,12 +241,17 @@ private:
     /// Interpret a redirect response.
     /// lock over sites_mutex_ required
     std::shared_ptr<Site::Resource>
-    processRedirect (
+    processRedirect(
         detail::response_type& res,
         std::size_t siteIdx,
         std::lock_guard<std::mutex>& lock);
+
+    /// If no sites are provided, or a site fails to load,
+    /// get a list of local cache files from the ValidatorList.
+    bool
+    missingSite();
 };
 
-} // ripple
+}  // namespace ripple
 
 #endif

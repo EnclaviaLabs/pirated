@@ -40,7 +40,7 @@ class ByzantineFailureSim_test : public beast::unit_test::suite
         ConsensusParms const parms{};
 
         SimDuration const delay =
-            date::round<milliseconds>(0.2 * parms.ledgerGRANULARITY);
+            round<milliseconds>(0.2 * parms.ledgerGRANULARITY);
         PeerGroup a = sim.createGroup(1);
         PeerGroup b = sim.createGroup(1);
         PeerGroup c = sim.createGroup(1);
@@ -67,9 +67,8 @@ class ByzantineFailureSim_test : public beast::unit_test::suite
              sim.trustGraph.forkablePairs(0.8))
         {
             std::cout << "Can fork " << PeerGroup{fi.unlA} << " "
-                      << " " << PeerGroup{fi.unlB}
-                      << " overlap " << fi.overlap << " required "
-                      << fi.required << "\n";
+                      << " " << PeerGroup{fi.unlB} << " overlap " << fi.overlap
+                      << " required " << fi.required << "\n";
         };
 
         // set prior state
@@ -77,7 +76,7 @@ class ByzantineFailureSim_test : public beast::unit_test::suite
 
         PeerGroup byzantineNodes = a + b + c + g;
         // All peers see some TX 0
-        for (Peer * peer : network)
+        for (Peer* peer : network)
         {
             peer->submit(Tx(0));
             // Peers 0,1,2,6 will close the next ledger differently by injecting

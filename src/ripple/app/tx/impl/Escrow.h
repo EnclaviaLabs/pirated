@@ -24,23 +24,20 @@
 
 namespace ripple {
 
-class EscrowCreate
-    : public Transactor
+class EscrowCreate : public Transactor
 {
 public:
-    explicit
-    EscrowCreate (ApplyContext& ctx)
-        : Transactor(ctx)
+    static constexpr ConsequencesFactoryType ConsequencesFactory{Custom};
+
+    explicit EscrowCreate(ApplyContext& ctx) : Transactor(ctx)
     {
     }
 
-    static
-    XRPAmount
-    calculateMaxSpend(STTx const& tx);
+    static TxConsequences
+    makeTxConsequences(PreflightContext const& ctx);
 
-    static
-    NotTEC
-    preflight (PreflightContext const& ctx);
+    static NotTEC
+    preflight(PreflightContext const& ctx);
 
     TER
     doApply() override;
@@ -48,25 +45,20 @@ public:
 
 //------------------------------------------------------------------------------
 
-class EscrowFinish
-    : public Transactor
+class EscrowFinish : public Transactor
 {
 public:
-    explicit
-    EscrowFinish (ApplyContext& ctx)
-        : Transactor(ctx)
+    static constexpr ConsequencesFactoryType ConsequencesFactory{Normal};
+
+    explicit EscrowFinish(ApplyContext& ctx) : Transactor(ctx)
     {
     }
 
-    static
-    NotTEC
-    preflight (PreflightContext const& ctx);
+    static NotTEC
+    preflight(PreflightContext const& ctx);
 
-    static
-    std::uint64_t
-    calculateBaseFee (
-        ReadView const& view,
-        STTx const& tx);
+    static FeeUnit64
+    calculateBaseFee(ReadView const& view, STTx const& tx);
 
     TER
     doApply() override;
@@ -74,24 +66,22 @@ public:
 
 //------------------------------------------------------------------------------
 
-class EscrowCancel
-    : public Transactor
+class EscrowCancel : public Transactor
 {
 public:
-    explicit
-    EscrowCancel (ApplyContext& ctx)
-        : Transactor(ctx)
+    static constexpr ConsequencesFactoryType ConsequencesFactory{Normal};
+
+    explicit EscrowCancel(ApplyContext& ctx) : Transactor(ctx)
     {
     }
 
-    static
-    NotTEC
-    preflight (PreflightContext const& ctx);
+    static NotTEC
+    preflight(PreflightContext const& ctx);
 
     TER
     doApply() override;
 };
 
-} // ripple
+}  // namespace ripple
 
 #endif

@@ -32,18 +32,19 @@ namespace ripple {
     Values should not be duplicated.
     @see getNextLedgerTimeResolution
 */
-std::chrono::seconds constexpr ledgerPossibleTimeResolutions[] =
-    {
-        std::chrono::seconds { 10},
-        std::chrono::seconds { 20},
-        std::chrono::seconds { 30},
-        std::chrono::seconds { 60},
-        std::chrono::seconds { 90},
-        std::chrono::seconds {120}
-    };
+std::chrono::seconds constexpr ledgerPossibleTimeResolutions[] = {
+    std::chrono::seconds{10},
+    std::chrono::seconds{20},
+    std::chrono::seconds{30},
+    std::chrono::seconds{60},
+    std::chrono::seconds{90},
+    std::chrono::seconds{120}};
 
 //! Initial resolution of ledger close time.
 auto constexpr ledgerDefaultTimeResolution = ledgerPossibleTimeResolutions[2];
+
+//! Close time resolution in genesis ledger
+auto constexpr ledgerGenesisTimeResolution = ledgerPossibleTimeResolutions[0];
 
 //! How often we increase the close time resolution (in numbers of ledgers)
 auto constexpr increaseLedgerTimeResolutionEvery = 8;
@@ -118,7 +119,7 @@ getNextLedgerTimeResolution(
 
 /** Calculates the close time for a ledger, given a close time resolution.
 
-    @param closeTime The time to be rouned.
+    @param closeTime The time to be rounded
     @param closeResolution The resolution
     @return @b closeTime rounded to the nearest multiple of @b closeResolution.
     Rounds up if @b closeTime is midway between multiples of @b closeResolution.
@@ -163,5 +164,5 @@ effCloseTime(
         roundCloseTime(closeTime, resolution), (priorCloseTime + 1s));
 }
 
-}
+}  // namespace ripple
 #endif

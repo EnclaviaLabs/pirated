@@ -19,16 +19,16 @@
 #ifndef RIPPLE_TEST_CSF_VALIDATION_H_INCLUDED
 #define RIPPLE_TEST_CSF_VALIDATION_H_INCLUDED
 
-#include <boost/optional.hpp>
-#include <memory>
 #include <ripple/basics/tagged_integer.h>
 #include <test/csf/ledgers.h>
+
+#include <memory>
+#include <optional>
 #include <utility>
 
 namespace ripple {
 namespace test {
 namespace csf {
-
 
 struct PeerIDTag;
 //< Uniquely identifies a peer
@@ -40,10 +40,10 @@ using PeerID = tagged_integer<std::uint32_t, PeerIDTag>;
     keys. Right now, the convention is to have the second entry 0 as the
     master key.
 */
-using PeerKey =  std::pair<PeerID, std::uint32_t>;
+using PeerKey = std::pair<PeerID, std::uint32_t>;
 
 /** Validation of a specific ledger by a specific Peer.
-*/
+ */
 class Validation
 {
     Ledger::ID ledgerID_{0};
@@ -55,20 +55,23 @@ class Validation
     PeerID nodeID_{0};
     bool trusted_ = false;
     bool full_ = false;
-    boost::optional<std::uint32_t> loadFee_;
+    std::optional<std::uint32_t> loadFee_;
+    std::uint64_t cookie_{0};
 
 public:
     using NodeKey = PeerKey;
     using NodeID = PeerID;
 
-    Validation(Ledger::ID id,
+    Validation(
+        Ledger::ID id,
         Ledger::Seq seq,
         NetClock::time_point sign,
         NetClock::time_point seen,
         PeerKey key,
         PeerID nodeID,
         bool full,
-        boost::optional<std::uint32_t> loadFee = boost::none)
+        std::optional<std::uint32_t> loadFee = std::nullopt,
+        std::uint64_t cookie = 0)
         : ledgerID_{id}
         , seq_{seq}
         , signTime_{sign}
@@ -77,6 +80,7 @@ public:
         , nodeID_{nodeID}
         , full_{full}
         , loadFee_{loadFee}
+        , cookie_{cookie}
     {
     }
 
@@ -104,13 +108,13 @@ public:
         return seenTime_;
     }
 
-    PeerKey
+    PeerKey const&
     key() const
     {
         return key_;
     }
 
-    PeerID
+    PeerID const&
     nodeID() const
     {
         return nodeID_;
@@ -128,8 +132,13 @@ public:
         return full_;
     }
 
+    std::uint64_t
+    cookie() const
+    {
+        return cookie_;
+    }
 
-    boost::optional<std::uint32_t>
+    std::optional<std::uint32_t>
     loadFee() const
     {
         return loadFee_;
@@ -189,7 +198,8 @@ public:
     }
 };
 
-}  // ripple
-}  // test
-}  // csf
+}  // namespace csf
+}  // namespace test
+}  // namespace ripple
+
 #endif

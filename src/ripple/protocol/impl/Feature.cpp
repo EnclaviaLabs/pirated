@@ -17,8 +17,8 @@
 */
 //==============================================================================
 
-#include <ripple/protocol/Feature.h>
 #include <ripple/basics/contract.h>
+#include <ripple/protocol/Feature.h>
 #include <ripple/protocol/digest.h>
 
 #include <cstring>
@@ -39,7 +39,7 @@ detail::FeatureCollections::FeatureCollections()
     {
         auto const name = featureNames[i];
         sha512_half_hasher h;
-        h (name, std::strlen (name));
+        h(name, std::strlen(name));
         auto const f = static_cast<uint256>(h);
 
         features.push_back(f);
@@ -48,12 +48,12 @@ detail::FeatureCollections::FeatureCollections()
     }
 }
 
-boost::optional<uint256>
+std::optional<uint256>
 detail::FeatureCollections::getRegisteredFeature(std::string const& name) const
 {
     auto const i = nameToFeature.find(name);
     if (i == nameToFeature.end())
-        return boost::none;
+        return std::nullopt;
     return i->second;
 }
 
@@ -78,17 +78,23 @@ static detail::FeatureCollections const featureCollections;
 
 /** Amendments that this server supports, but doesn't enable by default */
 std::vector<std::string> const&
-detail::supportedAmendments ()
+detail::supportedAmendments()
 {
     // Commented out amendments will be supported in a future release (and
     // uncommented at that time).
-    static std::vector<std::string> const supported
-    {
-        "MultiSign",
-//        "Tickets",
-        "TrustSetAuth",
-        "FeeEscalation", // Looks unused, but do not remove; Servers will be amendment blocked.
-//        "OwnerPaysFee",
+    //
+    // There are also unconditionally supported amendments in the list.
+    // Those are amendments that were enabled some time ago and the
+    // amendment conditional code has been removed.
+    //
+    // ** WARNING **
+    // Unconditionally supported amendments need to remain in the list.
+    // Removing them will cause servers to become amendment blocked.
+    static std::vector<std::string> const supported{
+        "MultiSign",      // Unconditionally supported.
+        "TrustSetAuth",   // Unconditionally supported.
+        "FeeEscalation",  // Unconditionally supported.
+                          //        "OwnerPaysFee",
         "PayChan",
         "Flow",
         "CryptoConditions",
@@ -120,64 +126,89 @@ detail::supportedAmendments ()
         "fixCheckThreading",
         "fixPayChanRecipientOwnerDir",
         "DeletableAccounts",
+        "fixQualityUpperBound",
+        "RequireFullyCanonicalSig",
+        "fix1781",
+        "HardenedValidations",
+        "fixAmendmentMajorityCalc",
+        //"NegativeUNL",      // Commented out to prevent automatic enablement
+        "TicketBatch",
+        "FlowSortStrands",
+        "fixSTAmountCanonicalize",
     };
     return supported;
 }
 
 //------------------------------------------------------------------------------
 
-boost::optional<uint256>
-getRegisteredFeature (std::string const& name)
+std::optional<uint256>
+getRegisteredFeature(std::string const& name)
 {
     return featureCollections.getRegisteredFeature(name);
 }
 
-size_t featureToBitsetIndex(uint256 const& f)
+size_t
+featureToBitsetIndex(uint256 const& f)
 {
     return featureCollections.featureToBitsetIndex(f);
 }
 
-uint256 bitsetIndexToFeature(size_t i)
+uint256
+bitsetIndexToFeature(size_t i)
 {
     return featureCollections.bitsetIndexToFeature(i);
 }
 
+// clang-format off
 
-uint256 const featureMultiSign = *getRegisteredFeature("MultiSign");
-uint256 const featureTickets = *getRegisteredFeature("Tickets");
-uint256 const featureTrustSetAuth = *getRegisteredFeature("TrustSetAuth");
-uint256 const featureOwnerPaysFee = *getRegisteredFeature("OwnerPaysFee");
-uint256 const featureCompareFlowV1V2 = *getRegisteredFeature("CompareFlowV1V2");
-uint256 const featurePayChan = *getRegisteredFeature("PayChan");
-uint256 const featureFlow = *getRegisteredFeature("Flow");
-uint256 const featureCompareTakerFlowCross = *getRegisteredFeature("CompareTakerFlowCross");
-uint256 const featureFlowCross = *getRegisteredFeature("FlowCross");
-uint256 const featureCryptoConditions = *getRegisteredFeature("CryptoConditions");
-uint256 const featureTickSize = *getRegisteredFeature("TickSize");
-uint256 const fix1368 = *getRegisteredFeature("fix1368");
-uint256 const featureEscrow = *getRegisteredFeature("Escrow");
-uint256 const featureCryptoConditionsSuite = *getRegisteredFeature("CryptoConditionsSuite");
-uint256 const fix1373 = *getRegisteredFeature("fix1373");
-uint256 const featureEnforceInvariants = *getRegisteredFeature("EnforceInvariants");
-uint256 const featureSortedDirectories = *getRegisteredFeature("SortedDirectories");
-uint256 const fix1201 = *getRegisteredFeature("fix1201");
-uint256 const fix1512 = *getRegisteredFeature("fix1512");
-uint256 const fix1513 = *getRegisteredFeature("fix1513");
-uint256 const fix1523 = *getRegisteredFeature("fix1523");
-uint256 const fix1528 = *getRegisteredFeature("fix1528");
-uint256 const featureDepositAuth = *getRegisteredFeature("DepositAuth");
-uint256 const featureChecks = *getRegisteredFeature("Checks");
-uint256 const fix1571 = *getRegisteredFeature("fix1571");
-uint256 const fix1543 = *getRegisteredFeature("fix1543");
-uint256 const fix1623 = *getRegisteredFeature("fix1623");
-uint256 const featureDepositPreauth = *getRegisteredFeature("DepositPreauth");
-uint256 const fix1515 = *getRegisteredFeature("fix1515");
-uint256 const fix1578 = *getRegisteredFeature("fix1578");
-uint256 const featureMultiSignReserve = *getRegisteredFeature("MultiSignReserve");
-uint256 const fixTakerDryOfferRemoval = *getRegisteredFeature("fixTakerDryOfferRemoval");
-uint256 const fixMasterKeyAsRegularKey = *getRegisteredFeature("fixMasterKeyAsRegularKey");
-uint256 const fixCheckThreading = *getRegisteredFeature("fixCheckThreading");
-uint256 const fixPayChanRecipientOwnerDir = *getRegisteredFeature("fixPayChanRecipientOwnerDir");
-uint256 const featureDeletableAccounts = *getRegisteredFeature("DeletableAccounts");
+uint256 const
+    featureOwnerPaysFee             = *getRegisteredFeature("OwnerPaysFee"),
+    featureFlow                     = *getRegisteredFeature("Flow"),
+    featureCompareTakerFlowCross    = *getRegisteredFeature("CompareTakerFlowCross"),
+    featureFlowCross                = *getRegisteredFeature("FlowCross"),
+    featureCryptoConditionsSuite    = *getRegisteredFeature("CryptoConditionsSuite"),
+    fix1513                         = *getRegisteredFeature("fix1513"),
+    featureDepositAuth              = *getRegisteredFeature("DepositAuth"),
+    featureChecks                   = *getRegisteredFeature("Checks"),
+    fix1571                         = *getRegisteredFeature("fix1571"),
+    fix1543                         = *getRegisteredFeature("fix1543"),
+    fix1623                         = *getRegisteredFeature("fix1623"),
+    featureDepositPreauth           = *getRegisteredFeature("DepositPreauth"),
+    fix1515                         = *getRegisteredFeature("fix1515"),
+    fix1578                         = *getRegisteredFeature("fix1578"),
+    featureMultiSignReserve         = *getRegisteredFeature("MultiSignReserve"),
+    fixTakerDryOfferRemoval         = *getRegisteredFeature("fixTakerDryOfferRemoval"),
+    fixMasterKeyAsRegularKey        = *getRegisteredFeature("fixMasterKeyAsRegularKey"),
+    fixCheckThreading               = *getRegisteredFeature("fixCheckThreading"),
+    fixPayChanRecipientOwnerDir     = *getRegisteredFeature("fixPayChanRecipientOwnerDir"),
+    featureDeletableAccounts        = *getRegisteredFeature("DeletableAccounts"),
+    fixQualityUpperBound            = *getRegisteredFeature("fixQualityUpperBound"),
+    featureRequireFullyCanonicalSig = *getRegisteredFeature("RequireFullyCanonicalSig"),
+    fix1781                         = *getRegisteredFeature("fix1781"),
+    featureHardenedValidations      = *getRegisteredFeature("HardenedValidations"),
+    fixAmendmentMajorityCalc        = *getRegisteredFeature("fixAmendmentMajorityCalc"),
+    featureNegativeUNL              = *getRegisteredFeature("NegativeUNL"),
+    featureTicketBatch              = *getRegisteredFeature("TicketBatch"),
+    featureFlowSortStrands          = *getRegisteredFeature("FlowSortStrands"),
+    fixSTAmountCanonicalize         = *getRegisteredFeature("fixSTAmountCanonicalize");
 
-} // ripple
+// The following amendments have been active for at least two years. Their
+// pre-amendment code has been removed and the identifiers are deprecated.
+[[deprecated("The referenced amendment has been retired"), maybe_unused]]
+uint256 const
+    retiredPayChan           = *getRegisteredFeature("PayChan"),
+    retiredCryptoConditions  = *getRegisteredFeature("CryptoConditions"),
+    retiredTickSize          = *getRegisteredFeature("TickSize"),
+    retiredFix1368           = *getRegisteredFeature("fix1368"),
+    retiredEscrow            = *getRegisteredFeature("Escrow"),
+    retiredFix1373           = *getRegisteredFeature("fix1373"),
+    retiredEnforceInvariants = *getRegisteredFeature("EnforceInvariants"),
+    retiredSortedDirectories = *getRegisteredFeature("SortedDirectories"),
+    retiredFix1201           = *getRegisteredFeature("fix1201"),
+    retiredFix1512           = *getRegisteredFeature("fix1512"),
+    retiredFix1523           = *getRegisteredFeature("fix1523"),
+    retiredFix1528           = *getRegisteredFeature("fix1528");
+
+// clang-format on
+
+}  // namespace ripple

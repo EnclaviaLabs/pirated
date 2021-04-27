@@ -20,38 +20,31 @@
 #ifndef RIPPLE_PROTOCOL_STVALIDATION_H_INCLUDED
 #define RIPPLE_PROTOCOL_STVALIDATION_H_INCLUDED
 
+#include <ripple/basics/FeeUnits.h>
 #include <ripple/basics/Log.h>
 #include <ripple/protocol/PublicKey.h>
 #include <ripple/protocol/STObject.h>
 #include <ripple/protocol/SecretKey.h>
+#include <cassert>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 
 namespace ripple {
 
 // Validation flags
-const std::uint32_t vfFullyCanonicalSig =
-    0x80000000;  // signature is fully canonical
+
+// This is a full (as opposed to a partial) validation
+constexpr std::uint32_t vfFullValidation = 0x00000001;
+
+// The signature is fully canonical
+constexpr std::uint32_t vfFullyCanonicalSig = 0x80000000;
 
 class STValidation final : public STObject, public CountedObject<STValidation>
 {
 public:
-    static char const*
-    getCountedObjectName()
-    {
-        return "STValidation";
-    }
-
-    using pointer = std::shared_ptr<STValidation>;
-    using ref = const std::shared_ptr<STValidation>&;
-
-    enum { kFullFlag = 0x1 };
-
-    /** Construct a STValidation from a peer.
-
-        Construct a STValidation from serialized data previously shared by a
-        peer.
+    /** Construct a STValidation from a peer from serialized data.
 
         @param sit Iterator over serialized data
         @param lookupNodeID Invocable with signature
@@ -69,72 +62,77 @@ public:
         SerialIter& sit,
         LookupNodeID&& lookupNodeID,
         bool checkSignature)
-        : STObject(getFormat(), sit, sfValidation)
+        : STObject(validationFormat(), sit, sfValidation)
+        , signingPubKey_([this]() {
+            auto const spk = getFieldVL(sfSigningPubKey);
+
+            if (publicKeyType(makeSlice(spk)) != KeyType::secp256k1)
+                Throw<std::runtime_error>("Invalid public key in validation");
+
+            return PublicKey{makeSlice(spk)};
+        }())
+        , nodeID_(lookupNodeID(signingPubKey_))
     {
-        auto const spk = getFieldVL(sfSigningPubKey);
-
-        if (publicKeyType(makeSlice(spk)) != KeyType::secp256k1)
+        if (checkSignature && !isValid())
         {
-            JLOG (debugLog().error())
-                << "Invalid public key in validation"
-                << getJson (JsonOptions::none);
-            Throw<std::runtime_error> ("Invalid public key in validation");
+            JLOG(debugLog().error()) << "Invalid signature in validation: "
+                                     << getJson(JsonOptions::none);
+            Throw<std::runtime_error>("Invalid signature in validation");
         }
 
-        if  (checkSignature && !isValid ())
-        {
-            JLOG (debugLog().error())
-                << "Invalid signature in validation"
-                << getJson (JsonOptions::none);
-            Throw<std::runtime_error> ("Invalid signature in validation");
-        }
-
-        mNodeID = lookupNodeID(PublicKey(makeSlice(spk)));
-        assert(mNodeID.isNonZero());
+        assert(nodeID_.isNonZero());
     }
 
-    /** Fees to set when issuing a new validation.
+    /** Construct, sign and trust a new STValidation issued by this node.
 
-        Optional fees to include when issuing a new validation
-    */
-    struct FeeSettings
-    {
-        boost::optional<std::uint32_t> loadFee;
-        boost::optional<std::uint64_t> baseFee;
-        boost::optional<std::uint32_t> reserveBase;
-        boost::optional<std::uint32_t> reserveIncrement;
-    };
-
-    /** Construct, sign and trust a new STValidation
-
-        Constructs, signs and trusts new STValidation issued by this node.
-
-        @param ledgerHash The hash of the validated ledger
-        @param ledgerSeq The sequence number (index) of the ledger
-        @param consensusHash The hash of the consensus transaction set
         @param signTime When the validation is signed
         @param publicKey The current signing public key
         @param secretKey The current signing secret key
         @param nodeID ID corresponding to node's public master key
-        @param isFull Whether the validation is full or partial
-        @param fee FeeSettings to include in the validation
-        @param amendments If not empty, the amendments to include in this validation
-
-        @note The fee and amendment settings are only set if not boost::none.
-              Typically, the amendments and fees are set for validations of flag
-              ledgers only.
+        @param f callback function to "fill" the validation with necessary data
     */
+    template <typename F>
     STValidation(
-        uint256 const& ledgerHash,
-        std::uint32_t ledgerSeq,
-        uint256 const& consensusHash,
         NetClock::time_point signTime,
-        PublicKey const& publicKey,
-        SecretKey const& secretKey,
+        PublicKey const& pk,
+        SecretKey const& sk,
         NodeID const& nodeID,
-        bool isFull,
-        FeeSettings const& fees,
-        std::vector<uint256> const& amendments);
+        F&& f)
+        : STObject(validationFormat(), sfValidation)
+        , signingPubKey_(pk)
+        , nodeID_(nodeID)
+        , seenTime_(signTime)
+    {
+        assert(nodeID_.isNonZero());
+
+        // First, set our own public key:
+        if (publicKeyType(pk) != KeyType::secp256k1)
+            LogicError(
+                "We can only use secp256k1 keys for signing validations");
+
+        setFieldVL(sfSigningPubKey, pk.slice());
+        setFieldU32(sfSigningTime, signTime.time_since_epoch().count());
+
+        // Perform additional initialization
+        f(*this);
+
+        // Finally, sign the validation and mark it as trusted:
+        setFlag(vfFullyCanonicalSig);
+        setFieldVL(sfSignature, signDigest(pk, sk, getSigningHash()));
+        setTrusted();
+
+        // Check to ensure that all required fields are present.
+        for (auto const& e : validationFormat())
+        {
+            if (e.style() == soeREQUIRED && !isFieldPresent(e.sField()))
+                LogicError(
+                    "Required field '" + e.sField().getName() +
+                    "' missing from validation.");
+        }
+
+        // We just signed this, so it should be valid.
+        valid_ = true;
+    }
 
     STBase*
     copy(std::size_t n, void* buf) const override
@@ -160,25 +158,28 @@ public:
     getSignTime() const;
 
     NetClock::time_point
-    getSeenTime() const;
+    getSeenTime() const noexcept;
 
-    PublicKey
-    getSignerPublic() const;
-
-    NodeID
-    getNodeID() const
+    PublicKey const&
+    getSignerPublic() const noexcept
     {
-        return mNodeID;
+        return signingPubKey_;
+    }
+
+    NodeID const&
+    getNodeID() const noexcept
+    {
+        return nodeID_;
     }
 
     bool
-    isValid() const;
+    isValid() const noexcept;
 
     bool
-    isFull() const;
+    isFull() const noexcept;
 
     bool
-    isTrusted() const
+    isTrusted() const noexcept
     {
         return mTrusted;
     }
@@ -201,7 +202,7 @@ public:
     void
     setSeen(NetClock::time_point s)
     {
-        mSeen = s;
+        seenTime_ = s;
     }
 
     Blob
@@ -211,15 +212,25 @@ public:
     getSignature() const;
 
 private:
-
     static SOTemplate const&
-    getFormat();
+    validationFormat();
 
-    NodeID mNodeID;
     bool mTrusted = false;
-    NetClock::time_point mSeen = {};
+
+    // Determines the validity of the signature in this validation; unseated
+    // optional if we haven't yet checked it, a boolean otherwise.
+    mutable std::optional<bool> valid_;
+
+    // The public key associated with the key used to sign this validation
+    PublicKey const signingPubKey_;
+
+    // The ID of the validator that issued this validation. For validators
+    // that use manifests this will be derived from the master public key.
+    NodeID const nodeID_;
+
+    NetClock::time_point seenTime_ = {};
 };
 
-} // ripple
+}  // namespace ripple
 
 #endif

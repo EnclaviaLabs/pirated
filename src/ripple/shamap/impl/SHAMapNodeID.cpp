@@ -17,154 +17,126 @@
 */
 //==============================================================================
 
-#include <ripple/shamap/SHAMapNodeID.h>
-#include <ripple/crypto/csprng.h>
-#include <ripple/basics/Log.h>
 #include <ripple/beast/core/LexicalCast.h>
-#include <boost/format.hpp>
+#include <ripple/crypto/csprng.h>
+#include <ripple/protocol/Serializer.h>
+#include <ripple/shamap/SHAMap.h>
+#include <ripple/shamap/SHAMapNodeID.h>
 #include <cassert>
-#include <cstring>
 
 namespace ripple {
 
-uint256 const&
-SHAMapNodeID::Masks (int depth)
+static uint256 const&
+depthMask(unsigned int depth)
 {
-    enum
-    {
-        mask_size = 65
-    };
+    enum { mask_size = 65 };
 
     struct masks_t
     {
-        uint256 entry [mask_size];
+        uint256 entry[mask_size];
 
         masks_t()
         {
             uint256 selector;
-            for (int i = 0; i < mask_size-1; i += 2)
+            for (int i = 0; i < mask_size - 1; i += 2)
             {
                 entry[i] = selector;
-                * (selector.begin () + (i / 2)) = 0xF0;
+                *(selector.begin() + (i / 2)) = 0xF0;
                 entry[i + 1] = selector;
-                * (selector.begin () + (i / 2)) = 0xFF;
+                *(selector.begin() + (i / 2)) = 0xFF;
             }
-            entry[mask_size-1] = selector;
+            entry[mask_size - 1] = selector;
         }
     };
+
     static masks_t const masks;
     return masks.entry[depth];
 }
 
 // canonicalize the hash to a node ID for this depth
-SHAMapNodeID::SHAMapNodeID (int depth, uint256 const& hash)
-    : mNodeID (hash), mDepth (depth)
+SHAMapNodeID::SHAMapNodeID(unsigned int depth, uint256 const& hash)
+    : id_(hash), depth_(depth)
 {
-    assert ((depth >= 0) && (depth < 65));
-    assert (mNodeID == (mNodeID & Masks(depth)));
+    assert(depth <= SHAMap::leafDepth);
+    assert(id_ == (id_ & depthMask(depth)));
 }
 
-SHAMapNodeID::SHAMapNodeID (void const* ptr, int len)
+std::string
+SHAMapNodeID::getRawString() const
 {
-    if (len < 33)
-        mDepth = -1;
-    else
+    Serializer s(33);
+    s.addBitString(id_);
+    s.add8(depth_);
+    return s.getString();
+}
+
+SHAMapNodeID
+SHAMapNodeID::getChildNodeID(unsigned int m) const
+{
+    assert(m < SHAMap::branchFactor);
+
+    // A SHAMap has exactly 65 levels, so nodes must not exceed that
+    // depth; if they do, this breaks the invariant of never allowing
+    // the construction of a SHAMapNodeID at an invalid depth. We assert
+    // to catch this in debug builds.
+    //
+    // We throw (but never assert) if the node is at level 64, since
+    // entries at that depth are leaf nodes and have no children and even
+    // constructing a child node from them would break the above invariant.
+    assert(depth_ <= SHAMap::leafDepth);
+
+    if (depth_ >= SHAMap::leafDepth)
+        Throw<std::logic_error>(
+            "Request for child node ID of " + to_string(*this));
+
+    if (id_ != (id_ & depthMask(depth_)))
+        Throw<std::logic_error>("Incorrect mask for " + to_string(*this));
+
+    SHAMapNodeID node{depth_ + 1, id_};
+    node.id_.begin()[depth_ / 2] |= (depth_ & 1) ? m : (m << 4);
+    return node;
+}
+
+[[nodiscard]] std::optional<SHAMapNodeID>
+deserializeSHAMapNodeID(void const* data, std::size_t size)
+{
+    std::optional<SHAMapNodeID> ret;
+
+    if (size == 33)
     {
-        std::memcpy (mNodeID.begin (), ptr, 32);
-        mDepth = * (static_cast<unsigned char const*> (ptr) + 32);
-    }
-}
+        unsigned int depth = *(static_cast<unsigned char const*>(data) + 32);
+        if (depth <= SHAMap::leafDepth)
+        {
+            auto const id = uint256::fromVoid(data);
 
-std::string SHAMapNodeID::getString () const
-{
-    if ((mDepth == 0) && (mNodeID.isZero ()))
-        return "NodeID(root)";
-
-    return "NodeID(" + std::to_string (mDepth) +
-        "," + to_string (mNodeID) + ")";
-}
-
-void SHAMapNodeID::addIDRaw (Serializer& s) const
-{
-    s.add256 (mNodeID);
-    s.add8 (mDepth);
-}
-
-std::string SHAMapNodeID::getRawString () const
-{
-    Serializer s (33);
-    addIDRaw (s);
-    return s.getString ();
-}
-
-// This can be optimized to avoid the << if needed
-SHAMapNodeID SHAMapNodeID::getChildNodeID (int m) const
-{
-    assert ((m >= 0) && (m < 16));
-    assert (mDepth < 64);
-
-    uint256 child (mNodeID);
-    child.begin ()[mDepth / 2] |= (mDepth & 1) ? m : (m << 4);
-
-    return SHAMapNodeID (mDepth + 1, child);
-}
-
-// Which branch would contain the specified hash
-int SHAMapNodeID::selectBranch (uint256 const& hash) const
-{
-#if RIPPLE_VERIFY_NODEOBJECT_KEYS
-
-    if (mDepth >= 64)
-    {
-        assert (false);
-        return -1;
+            if (id == (id & depthMask(depth)))
+                ret.emplace(depth, id);
+        }
     }
 
-    if ((hash & Masks(mDepth)) != mNodeID)
-    {
-        std::cerr << "selectBranch(" << getString () << std::endl;
-        std::cerr << "  " << hash << " off branch" << std::endl;
-        assert (false);
-        return -1;  // does not go under this node
-    }
+    return ret;
+}
 
-#endif
+[[nodiscard]] unsigned int
+selectBranch(SHAMapNodeID const& id, uint256 const& hash)
+{
+    auto const depth = id.getDepth();
+    auto branch = static_cast<unsigned int>(*(hash.begin() + (depth / 2)));
 
-    int branch = * (hash.begin () + (mDepth / 2));
-
-    if (mDepth & 1)
+    if (depth & 1)
         branch &= 0xf;
     else
         branch >>= 4;
 
-    assert ((branch >= 0) && (branch < 16));
-
+    assert(branch < SHAMap::branchFactor);
     return branch;
 }
 
-bool
-SHAMapNodeID::has_common_prefix(SHAMapNodeID const& other) const
+SHAMapNodeID
+SHAMapNodeID::createID(int depth, uint256 const& key)
 {
-    assert(mDepth <= other.mDepth);
-    auto x = mNodeID.begin();
-    auto y = other.mNodeID.begin();
-    for (unsigned i = 0; i < mDepth/2; ++i, ++x, ++y)
-    {
-        if (*x != *y)
-            return false;
-    }
-    if (mDepth & 1)
-    {
-        auto i = mDepth/2;
-        return (*(mNodeID.begin() + i) & 0xF0) == (*(other.mNodeID.begin() + i) & 0xF0);
-    }
-    return true;
+    assert((depth >= 0) && (depth < 65));
+    return SHAMapNodeID(depth, key & depthMask(depth));
 }
 
-void SHAMapNodeID::dump (beast::Journal journal) const
-{
-    JLOG(journal.debug()) <<
-        getString ();
-}
-
-} // ripple
+}  // namespace ripple

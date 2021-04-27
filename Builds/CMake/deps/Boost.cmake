@@ -11,8 +11,14 @@ if (WIN32 OR CYGWIN)
   if (DEFINED BOOST_ROOT)
     if (IS_DIRECTORY ${BOOST_ROOT}/stage64/lib)
       set (BOOST_LIBRARYDIR ${BOOST_ROOT}/stage64/lib)
-    else ()
+    elseif (IS_DIRECTORY ${BOOST_ROOT}/stage/lib)
       set (BOOST_LIBRARYDIR ${BOOST_ROOT}/stage/lib)
+    elseif (IS_DIRECTORY ${BOOST_ROOT}/lib)
+      set (BOOST_LIBRARYDIR ${BOOST_ROOT}/lib)
+    else ()
+      message(WARNING "Did not find expected boost library dir. "
+        "Defaulting to ${BOOST_ROOT}")
+      set (BOOST_LIBRARYDIR ${BOOST_ROOT})
     endif ()
   endif ()
 endif ()
@@ -36,16 +42,18 @@ if (static AND NOT APPLE)
 else ()
   set (Boost_USE_STATIC_RUNTIME OFF)
 endif ()
+# TBD:
+# Boost_USE_DEBUG_RUNTIME:  When ON, uses Boost libraries linked against the
 find_package (Boost 1.70 REQUIRED
   COMPONENTS
     chrono
+    container
     context
     coroutine
     date_time
     filesystem
     program_options
     regex
-    serialization
     system
     thread)
 
@@ -62,15 +70,20 @@ target_link_libraries (ripple_boost
   INTERFACE
     Boost::boost
     Boost::chrono
+    Boost::container
     Boost::coroutine
     Boost::date_time
     Boost::filesystem
     Boost::program_options
     Boost::regex
-    Boost::serialization
     Boost::system
     Boost::thread)
-if (san)
+if (Boost_COMPILER)
+  target_link_libraries (ripple_boost INTERFACE Boost::disable_autolinking)
+endif ()
+if (san AND is_clang)
+  # TODO: gcc does not support -fsanitize-blacklist...can we do something else 
+  # for gcc ?
   if (NOT Boost_INCLUDE_DIRS AND TARGET Boost::headers)
     get_target_property (Boost_INCLUDE_DIRS Boost::headers INTERFACE_INCLUDE_DIRECTORIES)
   endif ()

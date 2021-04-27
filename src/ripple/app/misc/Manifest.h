@@ -21,10 +21,10 @@
 #define RIPPLE_APP_MISC_MANIFEST_H_INCLUDED
 
 #include <ripple/basics/UnorderedContainers.h>
+#include <ripple/beast/utility/Journal.h>
 #include <ripple/protocol/PublicKey.h>
 #include <ripple/protocol/SecretKey.h>
-#include <ripple/beast/utility/Journal.h>
-#include <boost/optional.hpp>
+#include <optional>
 #include <string>
 
 namespace ripple {
@@ -33,7 +33,7 @@ namespace ripple {
     Validator key manifests
     -----------------------
 
-    Suppose the secret keys installed on a Ripple validator are compromised.  Not
+    Suppose the secret keys installed on a Ripple validator are compromised. Not
     only do you have to generate and install new key pairs on each validator,
     EVERY rippled needs to have its config updated with the new public keys, and
     is vulnerable to forged validation signatures until this is done.  The
@@ -94,70 +94,78 @@ struct Manifest
 
     Manifest() = default;
     Manifest(Manifest const& other) = delete;
-    Manifest& operator=(Manifest const& other) = delete;
+    Manifest&
+    operator=(Manifest const& other) = delete;
     Manifest(Manifest&& other) = default;
-    Manifest& operator=(Manifest&& other) = default;
+    Manifest&
+    operator=(Manifest&& other) = default;
 
     /// Returns `true` if manifest signature is valid
-    bool verify () const;
+    bool
+    verify() const;
 
     /// Returns hash of serialized manifest data
-    uint256 hash () const;
+    uint256
+    hash() const;
 
     /// Returns `true` if manifest revokes master key
-    bool revoked () const;
+    bool
+    revoked() const;
 
     /// Returns manifest signature
-    boost::optional<Blob> getSignature () const;
+    std::optional<Blob>
+    getSignature() const;
 
     /// Returns manifest master key signature
-    Blob getMasterSignature () const;
+    Blob
+    getMasterSignature() const;
 };
+
+/** Format the specified manifest to a string for debugging purposes. */
+std::string
+to_string(Manifest const& m);
 
 /** Constructs Manifest from serialized string
 
     @param s Serialized manifest string
 
-    @return `boost::none` if string is invalid
+    @return `std::nullopt` if string is invalid
 
     @note This does not verify manifest signatures.
           `Manifest::verify` should be called after constructing manifest.
 */
 /** @{ */
-boost::optional<Manifest>
+std::optional<Manifest>
 deserializeManifest(Slice s);
 
-inline
-boost::optional<Manifest>
+inline std::optional<Manifest>
 deserializeManifest(std::string const& s)
 {
     return deserializeManifest(makeSlice(s));
 }
 
-template <class T, class = std::enable_if_t<
-    std::is_same<T, char>::value || std::is_same<T, unsigned char>::value>>
-boost::optional<Manifest>
+template <
+    class T,
+    class = std::enable_if_t<
+        std::is_same<T, char>::value || std::is_same<T, unsigned char>::value>>
+std::optional<Manifest>
 deserializeManifest(std::vector<T> const& v)
 {
     return deserializeManifest(makeSlice(v));
 }
 /** @} */
 
-inline
-bool
+inline bool
 operator==(Manifest const& lhs, Manifest const& rhs)
 {
     // In theory, comparing the two serialized strings should be
     // sufficient.
-    return lhs.sequence == rhs.sequence &&
-        lhs.masterKey == rhs.masterKey &&
-        lhs.signingKey == rhs.signingKey &&
-        lhs.domain == rhs.domain &&
+    return lhs.sequence == rhs.sequence && lhs.masterKey == rhs.masterKey &&
+        lhs.signingKey == rhs.signingKey && lhs.domain == rhs.domain &&
         lhs.serialized == rhs.serialized;
 }
 
-inline
-bool
+inline bool
 operator!=(Manifest const& lhs, Manifest const& rhs)
 {
     return !(lhs == rhs);
@@ -167,25 +175,23 @@ struct ValidatorToken
 {
     std::string manifest;
     SecretKey validationSecret;
-
-private:
-    ValidatorToken(std::string const& m, SecretKey const& valSecret);
-
-public:
-    ValidatorToken(ValidatorToken const&) = delete;
-    ValidatorToken(ValidatorToken&& other) = default;
-
-    static boost::optional<ValidatorToken>
-    make_ValidatorToken(std::vector<std::string> const& tokenBlob);
 };
 
-enum class ManifestDisposition
-{
+std::optional<ValidatorToken>
+loadValidatorToken(std::vector<std::string> const& blob);
+
+enum class ManifestDisposition {
     /// Manifest is valid
     accepted = 0,
 
     /// Sequence is too old
     stale,
+
+    /// The master key is not acceptable to us
+    badMasterKey,
+
+    /// The ephemeral key is not acceptable to us
+    badEphemeralKey,
 
     /// Timely, but invalid signature
     invalid
@@ -200,6 +206,10 @@ to_string(ManifestDisposition m)
             return "accepted";
         case ManifestDisposition::stale:
             return "stale";
+        case ManifestDisposition::badMasterKey:
+            return "badMasterKey";
+        case ManifestDisposition::badEphemeralKey:
+            return "badEphemeralKey";
         case ManifestDisposition::invalid:
             return "invalid";
         default:
@@ -218,17 +228,25 @@ private:
     std::mutex mutable read_mutex_;
 
     /** Active manifests stored by master public key. */
-    hash_map <PublicKey, Manifest> map_;
+    hash_map<PublicKey, Manifest> map_;
 
     /** Master public keys stored by current ephemeral public key. */
-    hash_map <PublicKey, PublicKey> signingToMasterKeys_;
+    hash_map<PublicKey, PublicKey> signingToMasterKeys_;
+
+    std::atomic<std::uint32_t> seq_{0};
 
 public:
-    explicit
-    ManifestCache (beast::Journal j =
-        beast::Journal(beast::Journal::getNullSink()))
-        : j_ (j)
+    explicit ManifestCache(
+        beast::Journal j = beast::Journal(beast::Journal::getNullSink()))
+        : j_(j)
     {
+    }
+
+    /** A monotonically increasing number used to detect new manifests. */
+    std::uint32_t
+    sequence() const
+    {
+        return seq_.load();
     }
 
     /** Returns master key's current signing key.
@@ -242,7 +260,7 @@ public:
         May be called concurrently
     */
     PublicKey
-    getSigningKey (PublicKey const& pk) const;
+    getSigningKey(PublicKey const& pk) const;
 
     /** Returns ephemeral signing key's master public key.
 
@@ -255,7 +273,31 @@ public:
         May be called concurrently
     */
     PublicKey
-    getMasterKey (PublicKey const& pk) const;
+    getMasterKey(PublicKey const& pk) const;
+
+    /** Returns master key's current manifest sequence.
+
+        @return sequence corresponding to Master public key
+          if configured or std::nullopt otherwise
+    */
+    std::optional<std::uint32_t>
+    getSequence(PublicKey const& pk) const;
+
+    /** Returns domain claimed by a given public key
+
+        @return domain corresponding to Master public key
+          if present, otherwise std::nullopt
+    */
+    std::optional<std::string>
+    getDomain(PublicKey const& pk) const;
+
+    /** Returns mainfest corresponding to a given public key
+
+        @return manifest corresponding to Master public key
+          if present, otherwise std::nullopt
+    */
+    std::optional<std::string>
+    getManifest(PublicKey const& pk) const;
 
     /** Returns `true` if master key has been revoked in a manifest.
 
@@ -266,7 +308,7 @@ public:
         May be called concurrently
     */
     bool
-    revoked (PublicKey const& pk) const;
+    revoked(PublicKey const& pk) const;
 
     /** Add manifest to cache.
 
@@ -280,8 +322,7 @@ public:
         May be called concurrently
     */
     ManifestDisposition
-    applyManifest (
-        Manifest m);
+    applyManifest(Manifest m);
 
     /** Populate manifest cache with manifests in database and config.
 
@@ -299,8 +340,10 @@ public:
 
         May be called concurrently
     */
-    bool load (
-        DatabaseCon& dbCon, std::string const& dbTable,
+    bool
+    load(
+        DatabaseCon& dbCon,
+        std::string const& dbTable,
         std::string const& configManifest,
         std::vector<std::string> const& configRevocation);
 
@@ -314,8 +357,8 @@ public:
 
         May be called concurrently
     */
-    void load (
-        DatabaseCon& dbCon, std::string const& dbTable);
+    void
+    load(DatabaseCon& dbCon, std::string const& dbTable);
 
     /** Save cached manifests to database.
 
@@ -327,9 +370,11 @@ public:
 
         May be called concurrently
     */
-    void save (
-        DatabaseCon& dbCon, std::string const& dbTable,
-        std::function <bool (PublicKey const&)> isTrusted);
+    void
+    save(
+        DatabaseCon& dbCon,
+        std::string const& dbTable,
+        std::function<bool(PublicKey const&)> isTrusted);
 
     /** Invokes the callback once for every populated manifest.
 
@@ -373,7 +418,7 @@ public:
     for_each_manifest(PreFun&& pf, EachFun&& f) const
     {
         std::lock_guard lock{read_mutex_};
-        pf(map_.size ());
+        pf(map_.size());
         for (auto const& [_, manifest] : map_)
         {
             (void)_;
@@ -382,6 +427,6 @@ public:
     }
 };
 
-} // ripple
+}  // namespace ripple
 
 #endif

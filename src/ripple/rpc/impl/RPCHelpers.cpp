@@ -20,6 +20,7 @@
 #include <ripple/app/ledger/LedgerMaster.h>
 #include <ripple/app/ledger/OpenLedger.h>
 #include <ripple/app/misc/Transaction.h>
+#include <ripple/app/rdb/RelationalDBInterface.h>
 #include <ripple/ledger/View.h>
 #include <ripple/net/RPCErr.h>
 #include <ripple/protocol/AccountID.h>
@@ -29,116 +30,128 @@
 #include <ripple/rpc/impl/RPCHelpers.h>
 #include <boost/algorithm/string/case_conv.hpp>
 
+#include <ripple/rpc/impl/GRPCHelpers.h>
+
 namespace ripple {
 namespace RPC {
 
-boost::optional<AccountID>
+std::optional<AccountID>
 accountFromStringStrict(std::string const& account)
 {
-    boost::optional <AccountID> result;
+    std::optional<AccountID> result;
 
-    auto const publicKey = parseBase58<PublicKey> (
-        TokenType::AccountPublic,
-        account);
+    auto const publicKey =
+        parseBase58<PublicKey>(TokenType::AccountPublic, account);
 
     if (publicKey)
-        result = calcAccountID (*publicKey);
+        result = calcAccountID(*publicKey);
     else
-        result = parseBase58<AccountID> (account);
+        result = parseBase58<AccountID>(account);
 
     return result;
 }
 
-Json::Value
-accountFromString(
-    AccountID& result, std::string const& strIdent, bool bStrict)
+error_code_i
+accountFromStringWithCode(
+    AccountID& result,
+    std::string const& strIdent,
+    bool bStrict)
 {
-    if (auto accountID = accountFromStringStrict (strIdent))
+    if (auto accountID = accountFromStringStrict(strIdent))
     {
         result = *accountID;
-        return Json::objectValue;
+        return rpcSUCCESS;
     }
 
     if (bStrict)
-    {
-        auto id = deprecatedParseBitcoinAccountID (strIdent);
-        return rpcError (id ? rpcACT_BITCOIN : rpcACT_MALFORMED);
-    }
+        return rpcACT_MALFORMED;
 
     // We allow the use of the seeds which is poor practice
     // and merely for debugging convenience.
-    auto const seed = parseGenericSeed (strIdent);
+    auto const seed = parseGenericSeed(strIdent);
 
     if (!seed)
-        return rpcError (rpcBAD_SEED);
+        return rpcBAD_SEED;
 
-    auto const keypair = generateKeyPair (
-        KeyType::secp256k1,
-        *seed);
+    auto const keypair = generateKeyPair(KeyType::secp256k1, *seed);
 
-    result = calcAccountID (keypair.first);
-    return Json::objectValue;
+    result = calcAccountID(keypair.first);
+    return rpcSUCCESS;
+}
+
+Json::Value
+accountFromString(AccountID& result, std::string const& strIdent, bool bStrict)
+{
+    error_code_i code = accountFromStringWithCode(result, strIdent, bStrict);
+    if (code != rpcSUCCESS)
+        return rpcError(code);
+    else
+        return Json::objectValue;
 }
 
 bool
-getAccountObjects(ReadView const& ledger, AccountID const& account,
-    boost::optional<std::vector<LedgerEntryType>> const& typeFilter, uint256 dirIndex,
-    uint256 const& entryIndex, std::uint32_t const limit, Json::Value& jvResult)
+getAccountObjects(
+    ReadView const& ledger,
+    AccountID const& account,
+    std::optional<std::vector<LedgerEntryType>> const& typeFilter,
+    uint256 dirIndex,
+    uint256 const& entryIndex,
+    std::uint32_t const limit,
+    Json::Value& jvResult)
 {
-    auto const rootDirIndex = getOwnerDirIndex (account);
+    auto const root = keylet::ownerDir(account);
     auto found = false;
 
-    if (dirIndex.isZero ())
+    if (dirIndex.isZero())
     {
-        dirIndex = rootDirIndex;
+        dirIndex = root.key;
         found = true;
     }
 
     auto dir = ledger.read({ltDIR_NODE, dirIndex});
-    if (! dir)
+    if (!dir)
         return false;
 
     std::uint32_t i = 0;
     auto& jvObjects = (jvResult[jss::account_objects] = Json::arrayValue);
     for (;;)
     {
-        auto const& entries = dir->getFieldV256 (sfIndexes);
-        auto iter = entries.begin ();
+        auto const& entries = dir->getFieldV256(sfIndexes);
+        auto iter = entries.begin();
 
-        if (! found)
+        if (!found)
         {
-            iter = std::find (iter, entries.end (), entryIndex);
-            if (iter == entries.end ())
+            iter = std::find(iter, entries.end(), entryIndex);
+            if (iter == entries.end())
                 return false;
 
             found = true;
         }
 
-        for (; iter != entries.end (); ++iter)
+        for (; iter != entries.end(); ++iter)
         {
             auto const sleNode = ledger.read(keylet::child(*iter));
 
-            auto typeMatchesFilter = [] (
-                std::vector<LedgerEntryType> const& typeFilter,
-                LedgerEntryType ledgerType)
-            {
-                auto it = std::find(typeFilter.begin(), typeFilter.end(),
-                    ledgerType);
-                return it != typeFilter.end();
-            };
+            auto typeMatchesFilter =
+                [](std::vector<LedgerEntryType> const& typeFilter,
+                   LedgerEntryType ledgerType) {
+                    auto it = std::find(
+                        typeFilter.begin(), typeFilter.end(), ledgerType);
+                    return it != typeFilter.end();
+                };
 
             if (!typeFilter.has_value() ||
                 typeMatchesFilter(typeFilter.value(), sleNode->getType()))
             {
-                jvObjects.append (sleNode->getJson (JsonOptions::none));
+                jvObjects.append(sleNode->getJson(JsonOptions::none));
 
                 if (++i == limit)
                 {
-                    if (++iter != entries.end ())
+                    if (++iter != entries.end())
                     {
                         jvResult[jss::limit] = limit;
-                        jvResult[jss::marker] = to_string (dirIndex) + ',' +
-                            to_string (*iter);
+                        jvResult[jss::marker] =
+                            to_string(dirIndex) + ',' + to_string(*iter);
                         return true;
                     }
 
@@ -147,23 +160,23 @@ getAccountObjects(ReadView const& ledger, AccountID const& account,
             }
         }
 
-        auto const nodeIndex = dir->getFieldU64 (sfIndexNext);
+        auto const nodeIndex = dir->getFieldU64(sfIndexNext);
         if (nodeIndex == 0)
             return true;
 
-        dirIndex = getDirNodeIndex (rootDirIndex, nodeIndex);
+        dirIndex = keylet::page(root, nodeIndex).key;
         dir = ledger.read({ltDIR_NODE, dirIndex});
-        if (! dir)
+        if (!dir)
             return true;
 
         if (i == limit)
         {
-            auto const& e = dir->getFieldV256 (sfIndexes);
-            if (! e.empty ())
+            auto const& e = dir->getFieldV256(sfIndexes);
+            if (!e.empty())
             {
                 jvResult[jss::limit] = limit;
-                jvResult[jss::marker] = to_string (dirIndex) + ',' +
-                    to_string (*e.begin ());
+                jvResult[jss::marker] =
+                    to_string(dirIndex) + ',' + to_string(*e.begin());
             }
 
             return true;
@@ -174,25 +187,21 @@ getAccountObjects(ReadView const& ledger, AccountID const& account,
 namespace {
 
 bool
-isValidatedOld(LedgerMaster& ledgerMaster, bool standalone)
+isValidatedOld(LedgerMaster& ledgerMaster, bool standaloneOrReporting)
 {
-    if (standalone)
+    if (standaloneOrReporting)
         return false;
 
-    return ledgerMaster.getValidatedLedgerAge () >
-        Tuning::maxValidatedLedgerAge;
+    return ledgerMaster.getValidatedLedgerAge() > Tuning::maxValidatedLedgerAge;
 }
 
 template <class T>
 Status
-ledgerFromRequest(T& ledger, Context& context)
+ledgerFromRequest(T& ledger, JsonContext& context)
 {
-    static auto const minSequenceGap = 10;
-
     ledger.reset();
 
     auto& params = context.params;
-    auto& ledgerMaster = context.ledgerMaster;
 
     auto indexValue = params[jss::ledger_index];
     auto hashValue = params[jss::ledger_hash];
@@ -201,7 +210,7 @@ ledgerFromRequest(T& ledger, Context& context)
     auto& legacyLedger = params[jss::ledger];
     if (legacyLedger)
     {
-        if (legacyLedger.asString().size () > 12)
+        if (legacyLedger.asString().size() > 12)
             hashValue = legacyLedger;
         else
             indexValue = legacyLedger;
@@ -209,77 +218,117 @@ ledgerFromRequest(T& ledger, Context& context)
 
     if (hashValue)
     {
-        if (! hashValue.isString ())
+        if (!hashValue.isString())
             return {rpcINVALID_PARAMS, "ledgerHashNotString"};
 
         uint256 ledgerHash;
-        if (! ledgerHash.SetHex (hashValue.asString ()))
+        if (!ledgerHash.parseHex(hashValue.asString()))
             return {rpcINVALID_PARAMS, "ledgerHashMalformed"};
-
-        ledger = ledgerMaster.getLedgerByHash (ledgerHash);
-        if (ledger == nullptr)
-            return {rpcLGR_NOT_FOUND, "ledgerNotFound"};
+        return getLedger(ledger, ledgerHash, context);
     }
-    else if (indexValue.isNumeric())
+
+    auto const index = indexValue.asString();
+
+    if (index == "current" ||
+        (index.empty() && !context.app.config().reporting()))
+        return getLedger(ledger, LedgerShortcut::CURRENT, context);
+
+    if (index == "validated" ||
+        (index.empty() && context.app.config().reporting()))
+        return getLedger(ledger, LedgerShortcut::VALIDATED, context);
+
+    if (index == "closed")
+        return getLedger(ledger, LedgerShortcut::CLOSED, context);
+
+    std::uint32_t iVal;
+    if (beast::lexicalCastChecked(iVal, index))
+        return getLedger(ledger, iVal, context);
+
+    return {rpcINVALID_PARAMS, "ledgerIndexMalformed"};
+}
+}  // namespace
+
+template <class T, class R>
+Status
+ledgerFromRequest(T& ledger, GRPCContext<R>& context)
+{
+    R& request = context.params;
+    return ledgerFromSpecifier(ledger, request.ledger(), context);
+}
+
+// explicit instantiation of above function
+template Status
+ledgerFromRequest<>(
+    std::shared_ptr<ReadView const>&,
+    GRPCContext<org::xrpl::rpc::v1::GetAccountInfoRequest>&);
+
+// explicit instantiation of above function
+template Status
+ledgerFromRequest<>(
+    std::shared_ptr<ReadView const>&,
+    GRPCContext<org::xrpl::rpc::v1::GetLedgerEntryRequest>&);
+
+// explicit instantiation of above function
+template Status
+ledgerFromRequest<>(
+    std::shared_ptr<ReadView const>&,
+    GRPCContext<org::xrpl::rpc::v1::GetLedgerDataRequest>&);
+
+// explicit instantiation of above function
+template Status
+ledgerFromRequest<>(
+    std::shared_ptr<ReadView const>&,
+    GRPCContext<org::xrpl::rpc::v1::GetLedgerRequest>&);
+
+template <class T>
+Status
+ledgerFromSpecifier(
+    T& ledger,
+    org::xrpl::rpc::v1::LedgerSpecifier const& specifier,
+    Context& context)
+{
+    ledger.reset();
+
+    using LedgerCase = org::xrpl::rpc::v1::LedgerSpecifier::LedgerCase;
+    LedgerCase ledgerCase = specifier.ledger_case();
+    switch (ledgerCase)
     {
-        ledger = ledgerMaster.getLedgerBySeq (indexValue.asInt ());
-
-        if (ledger == nullptr)
-        {
-            auto cur = ledgerMaster.getCurrentLedger();
-            if (cur->info().seq == indexValue.asInt())
-                ledger = cur;
+        case LedgerCase::kHash: {
+            uint256 ledgerHash = uint256::fromVoid(specifier.hash().data());
+            return getLedger(ledger, ledgerHash, context);
         }
-
-        if (ledger == nullptr)
-            return {rpcLGR_NOT_FOUND, "ledgerNotFound"};
-
-        if (ledger->info().seq > ledgerMaster.getValidLedgerIndex() &&
-            isValidatedOld(ledgerMaster, context.app.config().standalone()))
-        {
-            ledger.reset();
-            return {rpcNO_NETWORK, "InsufficientNetworkMode"};
-        }
-    }
-    else
-    {
-        if (isValidatedOld (ledgerMaster, context.app.config().standalone()))
-            return {rpcNO_NETWORK, "InsufficientNetworkMode"};
-
-        auto const index = indexValue.asString ();
-        if (index == "validated")
-        {
-            ledger = ledgerMaster.getValidatedLedger ();
-            if (ledger == nullptr)
-                return {rpcNO_NETWORK, "InsufficientNetworkMode"};
-
-            assert (! ledger->open());
-        }
-        else
-        {
-            if (index.empty () || index == "current")
+        case LedgerCase::kSequence:
+            return getLedger(ledger, specifier.sequence(), context);
+        case LedgerCase::kShortcut:
+            [[fallthrough]];
+        case LedgerCase::LEDGER_NOT_SET: {
+            auto const shortcut = specifier.shortcut();
+            // note, unspecified defaults to validated in reporting mode
+            if (shortcut ==
+                    org::xrpl::rpc::v1::LedgerSpecifier::SHORTCUT_VALIDATED ||
+                (shortcut ==
+                     org::xrpl::rpc::v1::LedgerSpecifier::
+                         SHORTCUT_UNSPECIFIED &&
+                 context.app.config().reporting()))
             {
-                ledger = ledgerMaster.getCurrentLedger ();
-                assert (ledger->open());
-            }
-            else if (index == "closed")
-            {
-                ledger = ledgerMaster.getClosedLedger ();
-                assert (! ledger->open());
+                return getLedger(ledger, LedgerShortcut::VALIDATED, context);
             }
             else
             {
-                return {rpcINVALID_PARAMS, "ledgerIndexMalformed"};
-            }
-
-            if (ledger == nullptr)
-                return {rpcNO_NETWORK, "InsufficientNetworkMode"};
-
-            if (ledger->info().seq + minSequenceGap <
-                ledgerMaster.getValidLedgerIndex ())
-            {
-                ledger.reset ();
-                return {rpcNO_NETWORK, "InsufficientNetworkMode"};
+                if (shortcut ==
+                        org::xrpl::rpc::v1::LedgerSpecifier::SHORTCUT_CURRENT ||
+                    shortcut ==
+                        org::xrpl::rpc::v1::LedgerSpecifier::
+                            SHORTCUT_UNSPECIFIED)
+                {
+                    return getLedger(ledger, LedgerShortcut::CURRENT, context);
+                }
+                else if (
+                    shortcut ==
+                    org::xrpl::rpc::v1::LedgerSpecifier::SHORTCUT_CLOSED)
+                {
+                    return getLedger(ledger, LedgerShortcut::CLOSED, context);
+                }
             }
         }
     }
@@ -287,10 +336,140 @@ ledgerFromRequest(T& ledger, Context& context)
     return Status::OK;
 }
 
+template <class T>
+Status
+getLedger(T& ledger, uint256 const& ledgerHash, Context& context)
+{
+    ledger = context.ledgerMaster.getLedgerByHash(ledgerHash);
+    if (ledger == nullptr)
+        return {rpcLGR_NOT_FOUND, "ledgerNotFound"};
+    return Status::OK;
+}
+
+template <class T>
+Status
+getLedger(T& ledger, uint32_t ledgerIndex, Context& context)
+{
+    ledger = context.ledgerMaster.getLedgerBySeq(ledgerIndex);
+    if (ledger == nullptr)
+    {
+        if (context.app.config().reporting())
+            return {rpcLGR_NOT_FOUND, "ledgerNotFound"};
+        auto cur = context.ledgerMaster.getCurrentLedger();
+        if (cur->info().seq == ledgerIndex)
+        {
+            ledger = cur;
+        }
+    }
+
+    if (ledger == nullptr)
+        return {rpcLGR_NOT_FOUND, "ledgerNotFound"};
+
+    if (ledger->info().seq > context.ledgerMaster.getValidLedgerIndex() &&
+        isValidatedOld(context.ledgerMaster, context.app.config().standalone()))
+    {
+        ledger.reset();
+        if (context.apiVersion == 1)
+            return {rpcNO_NETWORK, "InsufficientNetworkMode"};
+        return {rpcNOT_SYNCED, "notSynced"};
+    }
+
+    return Status::OK;
+}
+
+template <class T>
+Status
+getLedger(T& ledger, LedgerShortcut shortcut, Context& context)
+{
+    if (isValidatedOld(
+            context.ledgerMaster,
+            context.app.config().standalone() ||
+                context.app.config().reporting()))
+    {
+        if (context.apiVersion == 1)
+            return {rpcNO_NETWORK, "InsufficientNetworkMode"};
+        return {rpcNOT_SYNCED, "notSynced"};
+    }
+
+    if (shortcut == LedgerShortcut::VALIDATED)
+    {
+        ledger = context.ledgerMaster.getValidatedLedger();
+        if (ledger == nullptr)
+        {
+            if (context.apiVersion == 1)
+                return {rpcNO_NETWORK, "InsufficientNetworkMode"};
+            return {rpcNOT_SYNCED, "notSynced"};
+        }
+
+        assert(!ledger->open());
+    }
+    else
+    {
+        if (shortcut == LedgerShortcut::CURRENT)
+        {
+            if (context.app.config().reporting())
+                return {
+                    rpcLGR_NOT_FOUND,
+                    "Reporting does not track current ledger"};
+            ledger = context.ledgerMaster.getCurrentLedger();
+            assert(ledger->open());
+        }
+        else if (shortcut == LedgerShortcut::CLOSED)
+        {
+            if (context.app.config().reporting())
+                return {
+                    rpcLGR_NOT_FOUND, "Reporting does not track closed ledger"};
+            ledger = context.ledgerMaster.getClosedLedger();
+            assert(!ledger->open());
+        }
+        else
+        {
+            return {rpcINVALID_PARAMS, "ledgerIndexMalformed"};
+        }
+
+        if (ledger == nullptr)
+        {
+            if (context.apiVersion == 1)
+                return {rpcNO_NETWORK, "InsufficientNetworkMode"};
+            return {rpcNOT_SYNCED, "notSynced"};
+        }
+
+        static auto const minSequenceGap = 10;
+
+        if (ledger->info().seq + minSequenceGap <
+            context.ledgerMaster.getValidLedgerIndex())
+        {
+            ledger.reset();
+            if (context.apiVersion == 1)
+                return {rpcNO_NETWORK, "InsufficientNetworkMode"};
+            return {rpcNOT_SYNCED, "notSynced"};
+        }
+    }
+    return Status::OK;
+}
+
+// Explicit instantiaion of above three functions
+template Status
+getLedger<>(std::shared_ptr<ReadView const>&, uint32_t, Context&);
+
+template Status
+getLedger<>(
+    std::shared_ptr<ReadView const>&,
+    LedgerShortcut shortcut,
+    Context&);
+
+template Status
+getLedger<>(std::shared_ptr<ReadView const>&, uint256 const&, Context&);
+
 bool
-isValidated(LedgerMaster& ledgerMaster, ReadView const& ledger,
+isValidated(
+    LedgerMaster& ledgerMaster,
+    ReadView const& ledger,
     Application& app)
 {
+    if (app.config().reporting())
+        return true;
+
     if (ledger.open())
         return false;
 
@@ -303,7 +482,8 @@ isValidated(LedgerMaster& ledgerMaster, ReadView const& ledger,
         // Use the skip list in the last validated ledger to see if ledger
         // comes before the last validated ledger (and thus has been
         // validated).
-        auto hash = ledgerMaster.walkHashBySeq (seq);
+        auto hash =
+            ledgerMaster.walkHashBySeq(seq, InboundLedger::Reason::GENERIC);
 
         if (!hash || ledger.info().hash != *hash)
         {
@@ -311,21 +491,21 @@ isValidated(LedgerMaster& ledgerMaster, ReadView const& ledger,
             if (hash)
             {
                 assert(hash->isNonZero());
-                uint256 valHash = getHashByIndex (seq, app);
+                uint256 valHash =
+                    app.getRelationalDBInterface().getHashByIndex(seq);
                 if (valHash == ledger.info().hash)
                 {
                     // SQL database doesn't match ledger chain
-                    ledgerMaster.clearLedger (seq);
+                    ledgerMaster.clearLedger(seq);
                 }
             }
             return false;
         }
     }
-    catch (SHAMapMissingNode const&)
+    catch (SHAMapMissingNode const& mn)
     {
-        auto stream = app.journal ("RPCHandler").warn();
-        JLOG (stream)
-            << "Missing SHANode " << std::to_string (seq);
+        auto stream = app.journal("RPCHandler").warn();
+        JLOG(stream) << "Ledger #" << seq << ": " << mn.what();
         return false;
     }
 
@@ -333,8 +513,6 @@ isValidated(LedgerMaster& ledgerMaster, ReadView const& ledger,
     ledger.info().validated = true;
     return true;
 }
-
-} // namespace
 
 // The previous version of the lookupLedger command would accept the
 // "ledger_index" argument as a string and silently treat it as a request to
@@ -356,17 +534,19 @@ isValidated(LedgerMaster& ledgerMaster, ReadView const& ledger,
 // optionally the fields "ledger_hash", "ledger_index" and
 // "ledger_current_index", if they are defined.
 Status
-lookupLedger(std::shared_ptr<ReadView const>& ledger, Context& context,
+lookupLedger(
+    std::shared_ptr<ReadView const>& ledger,
+    JsonContext& context,
     Json::Value& result)
 {
-    if (auto status = ledgerFromRequest (ledger, context))
+    if (auto status = ledgerFromRequest(ledger, context))
         return status;
 
     auto& info = ledger->info();
 
     if (!ledger->open())
     {
-        result[jss::ledger_hash] = to_string (info.hash);
+        result[jss::ledger_hash] = to_string(info.hash);
         result[jss::ledger_index] = info.seq;
     }
     else
@@ -374,16 +554,17 @@ lookupLedger(std::shared_ptr<ReadView const>& ledger, Context& context,
         result[jss::ledger_current_index] = info.seq;
     }
 
-    result[jss::validated] = isValidated (context.ledgerMaster, *ledger, context.app);
+    result[jss::validated] =
+        isValidated(context.ledgerMaster, *ledger, context.app);
     return Status::OK;
 }
 
 Json::Value
-lookupLedger(std::shared_ptr<ReadView const>& ledger, Context& context)
+lookupLedger(std::shared_ptr<ReadView const>& ledger, JsonContext& context)
 {
     Json::Value result;
-    if (auto status = lookupLedger (ledger, context, result))
-        status.inject (result);
+    if (auto status = lookupLedger(ledger, context, result))
+        status.inject(result);
 
     return result;
 }
@@ -392,13 +573,12 @@ hash_set<AccountID>
 parseAccountIds(Json::Value const& jvArray)
 {
     hash_set<AccountID> result;
-    for (auto const& jv: jvArray)
+    for (auto const& jv : jvArray)
     {
-        if (! jv.isString())
+        if (!jv.isString())
             return hash_set<AccountID>();
-        auto const id =
-            parseBase58<AccountID>(jv.asString());
-        if (! id)
+        auto const id = parseBase58<AccountID>(jv.asString());
+        if (!id)
             return hash_set<AccountID>();
         result.insert(*id);
     }
@@ -413,16 +593,15 @@ injectSLE(Json::Value& jv, SLE const& sle)
     {
         if (sle.isFieldPresent(sfEmailHash))
         {
-            auto const& hash =
-                sle.getFieldH128(sfEmailHash);
-            Blob const b (hash.begin(), hash.end());
+            auto const& hash = sle.getFieldH128(sfEmailHash);
+            Blob const b(hash.begin(), hash.end());
             std::string md5 = strHex(makeSlice(b));
             boost::to_lower(md5);
             // VFALCO TODO Give a name and move this constant
             //             to a more visible location. Also
             //             shouldn't this be https?
-            jv[jss::urlgravatar] = str(boost::format(
-                "http://www.gravatar.com/avatar/%s") % md5);
+            jv[jss::urlgravatar] =
+                str(boost::format("http://www.gravatar.com/avatar/%s") % md5);
         }
     }
     else
@@ -431,59 +610,57 @@ injectSLE(Json::Value& jv, SLE const& sle)
     }
 }
 
-boost::optional<Json::Value>
-readLimitField(unsigned int& limit, Tuning::LimitRange const& range,
-    Context const& context)
+std::optional<Json::Value>
+readLimitField(
+    unsigned int& limit,
+    Tuning::LimitRange const& range,
+    JsonContext const& context)
 {
     limit = range.rdefault;
     if (auto const& jvLimit = context.params[jss::limit])
     {
-        if (! (jvLimit.isUInt() || (jvLimit.isInt() && jvLimit.asInt() >= 0)))
-            return RPC::expected_field_error (jss::limit, "unsigned integer");
+        if (!(jvLimit.isUInt() || (jvLimit.isInt() && jvLimit.asInt() >= 0)))
+            return RPC::expected_field_error(jss::limit, "unsigned integer");
 
         limit = jvLimit.asUInt();
-        if (! isUnlimited (context.role))
+        if (!isUnlimited(context.role))
             limit = std::max(range.rmin, std::min(range.rmax, limit));
     }
-    return boost::none;
+    return std::nullopt;
 }
 
-boost::optional<Seed>
+std::optional<Seed>
 parseRippleLibSeed(Json::Value const& value)
 {
     // ripple-lib encodes seed used to generate an Ed25519 wallet in a
     // non-standard way. While rippled never encode seeds that way, we
     // try to detect such keys to avoid user confusion.
     if (!value.isString())
-        return boost::none;
+        return std::nullopt;
 
     auto const result = decodeBase58Token(value.asString(), TokenType::None);
 
     if (result.size() == 18 &&
-            static_cast<std::uint8_t>(result[0]) == std::uint8_t(0xE1) &&
-            static_cast<std::uint8_t>(result[1]) == std::uint8_t(0x4B))
+        static_cast<std::uint8_t>(result[0]) == std::uint8_t(0xE1) &&
+        static_cast<std::uint8_t>(result[1]) == std::uint8_t(0x4B))
         return Seed(makeSlice(result.substr(2)));
 
-    return boost::none;
+    return std::nullopt;
 }
 
-boost::optional<Seed>
+std::optional<Seed>
 getSeedFromRPC(Json::Value const& params, Json::Value& error)
 {
     // The array should be constexpr, but that makes Visual Studio unhappy.
-    static char const* const seedTypes[]
-    {
-        jss::passphrase.c_str(),
-        jss::seed.c_str(),
-        jss::seed_hex.c_str()
-    };
+    static char const* const seedTypes[]{
+        jss::passphrase.c_str(), jss::seed.c_str(), jss::seed_hex.c_str()};
 
     // Identify which seed type is in use.
     char const* seedType = nullptr;
     int count = 0;
     for (auto t : seedTypes)
     {
-        if (params.isMember (t))
+        if (params.isMember(t))
         {
             ++count;
             seedType = t;
@@ -492,40 +669,39 @@ getSeedFromRPC(Json::Value const& params, Json::Value& error)
 
     if (count != 1)
     {
-        error = RPC::make_param_error (
+        error = RPC::make_param_error(
             "Exactly one of the following must be specified: " +
-            std::string(jss::passphrase) + ", " +
-            std::string(jss::seed) + " or " +
-            std::string(jss::seed_hex));
-        return boost::none;
+            std::string(jss::passphrase) + ", " + std::string(jss::seed) +
+            " or " + std::string(jss::seed_hex));
+        return std::nullopt;
     }
 
     // Make sure a string is present
-    if (! params[seedType].isString())
+    if (!params[seedType].isString())
     {
-        error = RPC::expected_field_error (seedType, "string");
-        return boost::none;
+        error = RPC::expected_field_error(seedType, "string");
+        return std::nullopt;
     }
 
     auto const fieldContents = params[seedType].asString();
 
     // Convert string to seed.
-    boost::optional<Seed> seed;
+    std::optional<Seed> seed;
 
     if (seedType == jss::seed.c_str())
-        seed = parseBase58<Seed> (fieldContents);
+        seed = parseBase58<Seed>(fieldContents);
     else if (seedType == jss::passphrase.c_str())
-        seed = parseGenericSeed (fieldContents);
+        seed = parseGenericSeed(fieldContents);
     else if (seedType == jss::seed_hex.c_str())
     {
         uint128 s;
 
-        if (s.SetHexExact (fieldContents))
-            seed.emplace (Slice(s.data(), s.size()));
+        if (s.parseHex(fieldContents))
+            seed.emplace(Slice(s.data(), s.size()));
     }
 
     if (!seed)
-        error = rpcError (rpcBAD_SEED);
+        error = rpcError(rpcBAD_SEED);
 
     return seed;
 }
@@ -533,24 +709,22 @@ getSeedFromRPC(Json::Value const& params, Json::Value& error)
 std::pair<PublicKey, SecretKey>
 keypairForSignature(Json::Value const& params, Json::Value& error)
 {
-    bool const has_key_type  = params.isMember (jss::key_type);
+    bool const has_key_type = params.isMember(jss::key_type);
 
     // All of the secret types we allow, but only one at a time.
     // The array should be constexpr, but that makes Visual Studio unhappy.
-    static char const* const secretTypes[]
-    {
+    static char const* const secretTypes[]{
         jss::passphrase.c_str(),
         jss::secret.c_str(),
         jss::seed.c_str(),
-        jss::seed_hex.c_str()
-    };
+        jss::seed_hex.c_str()};
 
     // Identify which secret type is in use.
     char const* secretType = nullptr;
     int count = 0;
     for (auto t : secretTypes)
     {
-        if (params.isMember (t))
+        if (params.isMember(t))
         {
             ++count;
             secretType = t;
@@ -559,31 +733,29 @@ keypairForSignature(Json::Value const& params, Json::Value& error)
 
     if (count == 0 || secretType == nullptr)
     {
-        error = RPC::missing_field_error (jss::secret);
-        return { };
+        error = RPC::missing_field_error(jss::secret);
+        return {};
     }
 
     if (count > 1)
     {
-        error = RPC::make_param_error (
+        error = RPC::make_param_error(
             "Exactly one of the following must be specified: " +
-            std::string(jss::passphrase) + ", " +
-            std::string(jss::secret) + ", " +
-            std::string(jss::seed) + " or " +
+            std::string(jss::passphrase) + ", " + std::string(jss::secret) +
+            ", " + std::string(jss::seed) + " or " +
             std::string(jss::seed_hex));
-        return { };
+        return {};
     }
 
-    boost::optional<KeyType> keyType;
-    boost::optional<Seed> seed;
+    std::optional<KeyType> keyType;
+    std::optional<Seed> seed;
 
     if (has_key_type)
     {
-        if (! params[jss::key_type].isString())
+        if (!params[jss::key_type].isString())
         {
-            error = RPC::expected_field_error (
-                jss::key_type, "string");
-            return { };
+            error = RPC::expected_field_error(jss::key_type, "string");
+            return {};
         }
 
         keyType = keyTypeFromString(params[jss::key_type].asString());
@@ -591,15 +763,15 @@ keypairForSignature(Json::Value const& params, Json::Value& error)
         if (!keyType)
         {
             error = RPC::invalid_field_error(jss::key_type);
-            return { };
+            return {};
         }
 
         if (secretType == jss::secret.c_str())
         {
-            error = RPC::make_param_error (
+            error = RPC::make_param_error(
                 "The secret field is not allowed if " +
                 std::string(jss::key_type) + " is used.");
-            return { };
+            return {};
         }
     }
 
@@ -616,9 +788,9 @@ keypairForSignature(Json::Value const& params, Json::Value& error)
             // requested another key type, return an error.
             if (keyType.value_or(KeyType::ed25519) != KeyType::ed25519)
             {
-                error = RPC::make_error (rpcBAD_SEED,
-                    "Specified seed is for an Ed25519 wallet.");
-                return { };
+                error = RPC::make_error(
+                    rpcBAD_SEED, "Specified seed is for an Ed25519 wallet.");
+                return {};
             }
 
             keyType = KeyType::ed25519;
@@ -646,64 +818,61 @@ keypairForSignature(Json::Value const& params, Json::Value& error)
 
     if (!seed)
     {
-        if (!contains_error (error))
+        if (!contains_error(error))
         {
-            error = RPC::make_error (rpcBAD_SEED,
-                RPC::invalid_field_message (secretType));
+            error = RPC::make_error(
+                rpcBAD_SEED, RPC::invalid_field_message(secretType));
         }
 
-        return { };
+        return {};
     }
 
     if (keyType != KeyType::secp256k1 && keyType != KeyType::ed25519)
-        LogicError ("keypairForSignature: invalid key type");
+        LogicError("keypairForSignature: invalid key type");
 
-    return generateKeyPair (*keyType, *seed);
+    return generateKeyPair(*keyType, *seed);
 }
 
 std::pair<RPC::Status, LedgerEntryType>
 chooseLedgerEntryType(Json::Value const& params)
 {
-    std::pair<RPC::Status, LedgerEntryType> result{ RPC::Status::OK, ltINVALID };
+    std::pair<RPC::Status, LedgerEntryType> result{RPC::Status::OK, ltINVALID};
     if (params.isMember(jss::type))
     {
-        static
-            std::array<std::pair<char const *, LedgerEntryType>, 13> const types
-        { {
-            { jss::account,         ltACCOUNT_ROOT },
-            { jss::amendments,      ltAMENDMENTS },
-            { jss::check,           ltCHECK },
-            { jss::deposit_preauth, ltDEPOSIT_PREAUTH },
-            { jss::directory,       ltDIR_NODE },
-            { jss::escrow,          ltESCROW },
-            { jss::fee,             ltFEE_SETTINGS },
-            { jss::hashes,          ltLEDGER_HASHES },
-            { jss::offer,           ltOFFER },
-            { jss::payment_channel, ltPAYCHAN },
-            { jss::signer_list,     ltSIGNER_LIST },
-            { jss::state,           ltRIPPLE_STATE },
-            { jss::ticket,          ltTICKET }
-            } };
+        static constexpr std::array<std::pair<char const*, LedgerEntryType>, 13>
+            types{
+                {{jss::account, ltACCOUNT_ROOT},
+                 {jss::amendments, ltAMENDMENTS},
+                 {jss::check, ltCHECK},
+                 {jss::deposit_preauth, ltDEPOSIT_PREAUTH},
+                 {jss::directory, ltDIR_NODE},
+                 {jss::escrow, ltESCROW},
+                 {jss::fee, ltFEE_SETTINGS},
+                 {jss::hashes, ltLEDGER_HASHES},
+                 {jss::offer, ltOFFER},
+                 {jss::payment_channel, ltPAYCHAN},
+                 {jss::signer_list, ltSIGNER_LIST},
+                 {jss::state, ltRIPPLE_STATE},
+                 {jss::ticket, ltTICKET}}};
 
         auto const& p = params[jss::type];
         if (!p.isString())
         {
-            result.first = RPC::Status{ rpcINVALID_PARAMS,
-                "Invalid field 'type', not string." };
+            result.first = RPC::Status{
+                rpcINVALID_PARAMS, "Invalid field 'type', not string."};
             assert(result.first.type() == RPC::Status::Type::error_code_i);
             return result;
         }
 
         auto const filter = p.asString();
-        auto iter = std::find_if(types.begin(), types.end(),
-            [&filter](decltype (types.front())& t)
-        {
-            return t.first == filter;
-        });
+        auto iter = std::find_if(
+            types.begin(), types.end(), [&filter](decltype(types.front())& t) {
+                return t.first == filter;
+            });
         if (iter == types.end())
         {
-            result.first = RPC::Status{ rpcINVALID_PARAMS,
-                "Invalid field 'type'." };
+            result.first =
+                RPC::Status{rpcINVALID_PARAMS, "Invalid field 'type'."};
             assert(result.first.type() == RPC::Status::Type::error_code_i);
             return result;
         }
@@ -716,5 +885,25 @@ beast::SemanticVersion const firstVersion("1.0.0");
 beast::SemanticVersion const goodVersion("1.0.0");
 beast::SemanticVersion const lastVersion("1.0.0");
 
-} // RPC
-} // ripple
+unsigned int
+getAPIVersionNumber(Json::Value const& jv)
+{
+    static Json::Value const minVersion(RPC::ApiMinimumSupportedVersion);
+    static Json::Value const maxVersion(RPC::ApiMaximumSupportedVersion);
+    static Json::Value const invalidVersion(RPC::APIInvalidVersion);
+
+    Json::Value requestedVersion(RPC::APIVersionIfUnspecified);
+    if (jv.isObject())
+    {
+        requestedVersion = jv.get(jss::api_version, requestedVersion);
+    }
+    if (!(requestedVersion.isInt() || requestedVersion.isUInt()) ||
+        requestedVersion < minVersion || requestedVersion > maxVersion)
+    {
+        requestedVersion = invalidVersion;
+    }
+    return requestedVersion.asUInt();
+}
+
+}  // namespace RPC
+}  // namespace ripple

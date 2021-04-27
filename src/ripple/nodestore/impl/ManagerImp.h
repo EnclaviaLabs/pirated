@@ -23,6 +23,7 @@
 #include <ripple/nodestore/Manager.h>
 
 namespace ripple {
+
 namespace NodeStore {
 
 class ManagerImp : public Manager
@@ -32,12 +33,10 @@ private:
     std::vector<Factory*> list_;
 
 public:
-    static
-    ManagerImp&
+    static ManagerImp&
     instance();
 
-    static
-    void
+    static void
     missing_backend();
 
     ManagerImp() = default;
@@ -45,23 +44,25 @@ public:
     ~ManagerImp() = default;
 
     Factory*
-    find (std::string const& name) override;
+    find(std::string const& name) override;
 
     void
-    insert (Factory& factory) override;
+    insert(Factory& factory) override;
 
     void
-    erase (Factory& factory) override;
+    erase(Factory& factory) override;
 
-    std::unique_ptr <Backend>
-    make_Backend (
+    std::unique_ptr<Backend>
+    make_Backend(
         Section const& parameters,
+        std::size_t burstSize,
         Scheduler& scheduler,
         beast::Journal journal) override;
 
-    std::unique_ptr <Database>
-    make_Database (
+    std::unique_ptr<Database>
+    make_Database(
         std::string const& name,
+        std::size_t burstSize,
         Scheduler& scheduler,
         int readThreads,
         Stoppable& parent,
@@ -69,7 +70,7 @@ public:
         beast::Journal journal) override;
 };
 
-}
-}
+}  // namespace NodeStore
+}  // namespace ripple
 
 #endif

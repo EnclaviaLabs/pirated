@@ -38,6 +38,11 @@ if (MSVC)
 
     # /ZI (Edit & Continue debugging information) is incompatible with Gy-
     string (REPLACE "/ZI" "/Zi" ${var_} "${${var_}}")
+
+    # omit debug info completely under CI (not needed)
+    if (is_ci)
+      string (REPLACE "/Zi" " " ${var_} "${${var_}}")
+    endif ()
   endforeach ()
 
   target_compile_options (common
@@ -76,6 +81,7 @@ if (MSVC)
       _SCL_SECURE_NO_WARNINGS
       _CRT_SECURE_NO_WARNINGS
       WIN32_CONSOLE
+      WIN32_LEAN_AND_MEAN
       NOMINMAX
       # TODO: Resolve these warnings, don't just silence them
       _SILENCE_ALL_CXX17_DEPRECATION_WARNINGS

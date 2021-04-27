@@ -36,20 +36,23 @@ class Config;
 class ValidatorKeys
 {
 public:
+    PublicKey masterPublicKey;
     PublicKey publicKey;
     SecretKey secretKey;
     NodeID nodeID;
     std::string manifest;
+    std::uint32_t sequence = 0;
 
     ValidatorKeys(Config const& config, beast::Journal j);
 
-    bool configInvalid() const
+    bool
+    configInvalid() const
     {
         return configInvalid_;
     }
 
 private:
-    bool configInvalid_ = false; //< Set to true if config was invalid
+    bool configInvalid_ = false;  //< Set to true if config was invalid
 };
 
 }  // namespace ripple

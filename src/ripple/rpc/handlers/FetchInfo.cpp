@@ -17,18 +17,26 @@
 */
 //==============================================================================
 
+#include <ripple/app/main/Application.h>
 #include <ripple/app/misc/NetworkOPs.h>
 #include <ripple/json/json_value.h>
+#include <ripple/net/RPCErr.h>
+#include <ripple/protocol/ErrorCodes.h>
 #include <ripple/protocol/jss.h>
 #include <ripple/rpc/Context.h>
 
 namespace ripple {
 
-Json::Value doFetchInfo (RPC::Context& context)
+Json::Value
+doFetchInfo(RPC::JsonContext& context)
 {
-    Json::Value ret (Json::objectValue);
+    if (context.app.config().reporting())
+        return rpcError(rpcREPORTING_UNSUPPORTED);
 
-    if (context.params.isMember(jss::clear) && context.params[jss::clear].asBool())
+    Json::Value ret(Json::objectValue);
+
+    if (context.params.isMember(jss::clear) &&
+        context.params[jss::clear].asBool())
     {
         context.netOps.clearLedgerFetch();
         ret[jss::clear] = true;
@@ -39,4 +47,4 @@ Json::Value doFetchInfo (RPC::Context& context)
     return ret;
 }
 
-} // ripple
+}  // namespace ripple

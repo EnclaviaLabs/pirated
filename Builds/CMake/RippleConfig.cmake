@@ -15,13 +15,13 @@ endif ()
 find_dependency (Boost 1.70
   COMPONENTS
     chrono
+    container
     context
     coroutine
     date_time
     filesystem
     program_options
     regex
-    serialization
     system
     thread)
 #[=========================================================[
@@ -47,6 +47,7 @@ endif ()
 set (OPENSSL_MSVC_STATIC_RT ON)
 find_dependency (OpenSSL 1.0.2 REQUIRED)
 find_dependency (ZLIB)
+find_dependency (date)
 if (TARGET ZLIB::ZLIB)
   set_target_properties(OpenSSL::Crypto PROPERTIES
     INTERFACE_LINK_LIBRARIES ZLIB::ZLIB)

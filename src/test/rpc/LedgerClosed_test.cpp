@@ -26,39 +26,43 @@ namespace ripple {
 class LedgerClosed_test : public beast::unit_test::suite
 {
 public:
-
-    void testMonitorRoot()
+    void
+    testMonitorRoot()
     {
         using namespace test::jtx;
-        Env env {*this, FeatureBitset{}};
-        Account const alice {"alice"};
+        Env env{*this, FeatureBitset{}};
+        Account const alice{"alice"};
         env.fund(XRP(10000), alice);
 
-        auto lc_result = env.rpc("ledger_closed") [jss::result];
-        BEAST_EXPECT(lc_result[jss::ledger_hash]  == "8AEDBB96643962F1D40F01E25632ABB3C56C9F04B0231EE4B18248B90173D189");
+        auto lc_result = env.rpc("ledger_closed")[jss::result];
+        BEAST_EXPECT(
+            lc_result[jss::ledger_hash] ==
+            "A15F7FBE0B06286915D971BF9802C9431CD7DE40E2AC7D07C409EDB1C0715C60");
         BEAST_EXPECT(lc_result[jss::ledger_index] == 2);
 
         env.close();
         auto const ar_master = env.le(env.master);
         BEAST_EXPECT(ar_master->getAccountID(sfAccount) == env.master.id());
-        BEAST_EXPECT((*ar_master)[sfBalance] == drops( 99999989999999980 ));
+        BEAST_EXPECT((*ar_master)[sfBalance] == drops(99999989999999980));
 
         auto const ar_alice = env.le(alice);
         BEAST_EXPECT(ar_alice->getAccountID(sfAccount) == alice.id());
-        BEAST_EXPECT((*ar_alice)[sfBalance] == XRP( 10000 ));
+        BEAST_EXPECT((*ar_alice)[sfBalance] == XRP(10000));
 
-        lc_result = env.rpc("ledger_closed") [jss::result];
-        BEAST_EXPECT(lc_result[jss::ledger_hash]  == "7C3EEDB3124D92E49E75D81A8826A2E65A75FD71FC3FD6F36FEB803C5F1D812D");
+        lc_result = env.rpc("ledger_closed")[jss::result];
+        BEAST_EXPECT(
+            lc_result[jss::ledger_hash] ==
+            "2E81FC6EC0DD943197E0C7E3FBE9AE307F2775F2F7485BB37307984C3C0F2340");
         BEAST_EXPECT(lc_result[jss::ledger_index] == 3);
     }
 
-    void run() override
+    void
+    run() override
     {
         testMonitorRoot();
     }
 };
 
-BEAST_DEFINE_TESTSUITE(LedgerClosed,app,ripple);
+BEAST_DEFINE_TESTSUITE(LedgerClosed, app, ripple);
 
-}
-
+}  // namespace ripple

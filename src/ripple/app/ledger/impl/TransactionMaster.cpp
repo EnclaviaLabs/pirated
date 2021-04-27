@@ -18,78 +18,122 @@
 //==============================================================================
 
 #include <ripple/app/ledger/TransactionMaster.h>
-#include <ripple/app/misc/Transaction.h>
 #include <ripple/app/main/Application.h>
-#include <ripple/protocol/STTx.h>
-#include <ripple/basics/Log.h>
+#include <ripple/app/misc/Transaction.h>
 #include <ripple/basics/chrono.h>
+#include <ripple/protocol/STTx.h>
 
 namespace ripple {
 
-TransactionMaster::TransactionMaster (Application& app)
-    : mApp (app)
-    , mCache ("TransactionCache", 65536, std::chrono::minutes {30}, stopwatch(),
-        mApp.journal("TaggedCache"))
+TransactionMaster::TransactionMaster(Application& app)
+    : mApp(app)
+    , mCache(
+          "TransactionCache",
+          65536,
+          std::chrono::minutes{30},
+          stopwatch(),
+          mApp.journal("TaggedCache"))
 {
 }
 
-bool TransactionMaster::inLedger (uint256 const& hash, std::uint32_t ledger)
+bool
+TransactionMaster::inLedger(uint256 const& hash, std::uint32_t ledger)
 {
-    auto txn = mCache.fetch (hash);
+    auto txn = mCache.fetch(hash);
 
     if (!txn)
         return false;
 
-    txn->setStatus (COMMITTED, ledger);
+    txn->setStatus(COMMITTED, ledger);
     return true;
 }
 
 std::shared_ptr<Transaction>
-TransactionMaster::fetch (uint256 const& txnID, bool checkDisk)
+TransactionMaster::fetch_from_cache(uint256 const& txnID)
 {
-    auto txn = mCache.fetch (txnID);
+    return mCache.fetch(txnID);
+}
 
-    if (!checkDisk || txn)
-        return txn;
+std::variant<
+    std::pair<std::shared_ptr<Transaction>, std::shared_ptr<TxMeta>>,
+    TxSearched>
+TransactionMaster::fetch(uint256 const& txnID, error_code_i& ec)
+{
+    using TxPair =
+        std::pair<std::shared_ptr<Transaction>, std::shared_ptr<TxMeta>>;
 
-    txn = Transaction::load (txnID, mApp);
+    if (auto txn = fetch_from_cache(txnID); txn && !txn->isValidated())
+        return std::pair{std::move(txn), nullptr};
 
-    if (!txn)
-        return txn;
+    auto v = Transaction::load(txnID, mApp, ec);
 
-    mCache.canonicalize (txnID, txn);
+    if (std::holds_alternative<TxSearched>(v))
+        return v;
 
-    return txn;
+    auto [txn, txnMeta] = std::get<TxPair>(v);
+
+    if (txn)
+        mCache.canonicalize_replace_client(txnID, txn);
+
+    return std::pair{std::move(txn), std::move(txnMeta)};
+}
+
+std::variant<
+    std::pair<std::shared_ptr<Transaction>, std::shared_ptr<TxMeta>>,
+    TxSearched>
+TransactionMaster::fetch(
+    uint256 const& txnID,
+    ClosedInterval<uint32_t> const& range,
+    error_code_i& ec)
+{
+    using TxPair =
+        std::pair<std::shared_ptr<Transaction>, std::shared_ptr<TxMeta>>;
+
+    if (auto txn = fetch_from_cache(txnID); txn && !txn->isValidated())
+        return std::pair{std::move(txn), nullptr};
+
+    auto v = Transaction::load(txnID, mApp, range, ec);
+
+    if (std::holds_alternative<TxSearched>(v))
+        return v;
+
+    auto [txn, txnMeta] = std::get<TxPair>(v);
+
+    if (txn)
+        mCache.canonicalize_replace_client(txnID, txn);
+
+    return std::pair{std::move(txn), std::move(txnMeta)};
 }
 
 std::shared_ptr<STTx const>
-TransactionMaster::fetch (std::shared_ptr<SHAMapItem> const& item,
-    SHAMapTreeNode::TNType type,
-        bool checkDisk, std::uint32_t uCommitLedger)
+TransactionMaster::fetch(
+    std::shared_ptr<SHAMapItem> const& item,
+    SHAMapNodeType type,
+    std::uint32_t uCommitLedger)
 {
-    std::shared_ptr<STTx const>  txn;
-    auto iTx = fetch (item->key(), false);
+    std::shared_ptr<STTx const> txn;
+    auto iTx = fetch_from_cache(item->key());
 
     if (!iTx)
     {
-
-        if (type == SHAMapTreeNode::tnTRANSACTION_NM)
+        if (type == SHAMapNodeType::tnTRANSACTION_NM)
         {
-            SerialIter sit (item->slice());
-            txn = std::make_shared<STTx const> (std::ref (sit));
+            SerialIter sit(item->slice());
+            txn = std::make_shared<STTx const>(std::ref(sit));
         }
-        else if (type == SHAMapTreeNode::tnTRANSACTION_MD)
+        else if (type == SHAMapNodeType::tnTRANSACTION_MD)
         {
-            auto blob = SerialIter{item->data(), item->size()}.getVL();
-            txn = std::make_shared<STTx const>(SerialIter{blob.data(), blob.size()});
+            auto blob = SerialIter{item->slice()}.getVL();
+            txn = std::make_shared<STTx const>(
+                SerialIter{blob.data(), blob.size()});
         }
     }
     else
     {
         if (uCommitLedger)
-            iTx->setStatus (COMMITTED, uCommitLedger);
+            iTx->setStatus(COMMITTED, uCommitLedger);
 
-        txn = iTx->getSTransaction ();
+        txn = iTx->getSTransaction();
     }
 
     return txn;
@@ -103,19 +147,21 @@ TransactionMaster::canonicalize(std::shared_ptr<Transaction>* pTransaction)
     {
         auto txn = *pTransaction;
         // VFALCO NOTE canonicalize can change the value of txn!
-        mCache.canonicalize(tid, txn);
+        mCache.canonicalize_replace_client(tid, txn);
         *pTransaction = txn;
     }
 }
 
-void TransactionMaster::sweep (void)
+void
+TransactionMaster::sweep(void)
 {
-    mCache.sweep ();
+    mCache.sweep();
 }
 
-TaggedCache <uint256, Transaction>& TransactionMaster::getCache()
+TaggedCache<uint256, Transaction>&
+TransactionMaster::getCache()
 {
     return mCache;
 }
 
-} // ripple
+}  // namespace ripple

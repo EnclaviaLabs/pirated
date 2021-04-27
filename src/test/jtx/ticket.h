@@ -20,10 +20,10 @@
 #ifndef RIPPLE_TEST_JTX_TICKET_H_INCLUDED
 #define RIPPLE_TEST_JTX_TICKET_H_INCLUDED
 
-#include <test/jtx/Env.h>
 #include <test/jtx/Account.h>
+#include <test/jtx/Env.h>
 #include <test/jtx/owners.h>
-#include <boost/optional.hpp>
+
 #include <cstdint>
 
 namespace ripple {
@@ -39,70 +39,33 @@ namespace jtx {
 /** Ticket operations */
 namespace ticket {
 
-namespace detail {
-
+/** Create one of more tickets */
 Json::Value
-create (Account const& account,
-    boost::optional<Account> const& target,
-        boost::optional<std::uint32_t> const& expire);
+create(Account const& account, std::uint32_t count);
 
-inline
-void
-create_arg (boost::optional<Account>& opt,
-    boost::optional<std::uint32_t>&,
-        Account const& value)
+/** Set a ticket sequence on a JTx. */
+class use
 {
-    opt = value;
-}
+private:
+    std::uint32_t ticketSeq_;
 
-inline
-void
-create_arg (boost::optional<Account>&,
-    boost::optional<std::uint32_t>& opt,
-        std::uint32_t value)
-{
-    opt = value;
-}
+public:
+    use(std::uint32_t ticketSeq) : ticketSeq_{ticketSeq}
+    {
+    }
 
-template<class Arg, class... Args>
-void
-create_args(boost::optional<Account>& account_opt,
-    boost::optional<std::uint32_t>& expire_opt,
-        Arg const& arg, Args const&... args)
-{
-    create_arg(account_opt, expire_opt, arg);
-    if constexpr (sizeof...(args))
-        create_args(account_opt, expire_opt, args...);
-}
+    void
+    operator()(Env&, JTx& jt) const;
+};
 
-} // detail
-
-/** Create a ticket */
-template <class... Args>
-Json::Value
-create (Account const& account,
-    Args const&... args)
-{
-    boost::optional<Account> target;
-    boost::optional<std::uint32_t> expire;
-    if constexpr (sizeof...(args) > 0)
-        detail::create_args(target, expire, args...);
-    return detail::create(
-        account, target, expire);
-}
-
-/** Cancel a ticket */
-Json::Value
-cancel(Account const& account, std::string const & ticketId);
-
-} // ticket
+}  // namespace ticket
 
 /** Match the number of tickets on the account. */
 using tickets = owner_count<ltTICKET>;
 
-} // jtx
+}  // namespace jtx
 
-} // test
-} // ripple
+}  // namespace test
+}  // namespace ripple
 
 #endif

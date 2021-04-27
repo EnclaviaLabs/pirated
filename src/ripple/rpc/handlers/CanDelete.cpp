@@ -21,25 +21,30 @@
 #include <ripple/app/main/Application.h>
 #include <ripple/app/misc/NetworkOPs.h>
 #include <ripple/app/misc/SHAMapStore.h>
+#include <ripple/beast/core/LexicalCast.h>
+#include <ripple/protocol/ErrorCodes.h>
 #include <ripple/protocol/jss.h>
 #include <ripple/rpc/Context.h>
-#include <ripple/beast/core/LexicalCast.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <boost/format.hpp>
 
 namespace ripple {
 
 // can_delete [<ledgerid>|<ledgerhash>|now|always|never]
-Json::Value doCanDelete (RPC::Context& context)
+Json::Value
+doCanDelete(RPC::JsonContext& context)
 {
-    if (! context.app.getSHAMapStore().advisoryDelete())
+    if (context.app.config().reporting())
+        return RPC::make_error(rpcREPORTING_UNSUPPORTED);
+
+    if (!context.app.getSHAMapStore().advisoryDelete())
         return RPC::make_error(rpcNOT_ENABLED);
 
-    Json::Value ret (Json::objectValue);
+    Json::Value ret(Json::objectValue);
 
     if (context.params.isMember(jss::can_delete))
     {
-        Json::Value canDelete  = context.params.get(jss::can_delete, 0);
+        Json::Value canDelete = context.params.get(jss::can_delete, 0);
         std::uint32_t canDeleteSeq = 0;
 
         if (canDelete.isUInt())
@@ -49,13 +54,12 @@ Json::Value doCanDelete (RPC::Context& context)
         else
         {
             std::string canDeleteStr = canDelete.asString();
-            boost::to_lower (canDeleteStr);
+            boost::to_lower(canDeleteStr);
 
-            if (canDeleteStr.find_first_not_of ("0123456789") ==
+            if (canDeleteStr.find_first_not_of("0123456789") ==
                 std::string::npos)
             {
-                canDeleteSeq =
-                        beast::lexicalCast <std::uint32_t>(canDeleteStr);
+                canDeleteSeq = beast::lexicalCast<std::uint32_t>(canDeleteStr);
             }
             else if (canDeleteStr == "never")
             {
@@ -63,20 +67,17 @@ Json::Value doCanDelete (RPC::Context& context)
             }
             else if (canDeleteStr == "always")
             {
-                canDeleteSeq = std::numeric_limits <std::uint32_t>::max();
+                canDeleteSeq = std::numeric_limits<std::uint32_t>::max();
             }
             else if (canDeleteStr == "now")
             {
                 canDeleteSeq = context.app.getSHAMapStore().getLastRotated();
                 if (!canDeleteSeq)
-                    return RPC::make_error (rpcNOT_READY);
+                    return RPC::make_error(rpcNOT_READY);
             }
-            else if (canDeleteStr.size() == 64 &&
-                canDeleteStr.find_first_not_of("0123456789abcdef") ==
-                std::string::npos)
+            else if (uint256 lh; lh.parseHex(canDeleteStr))
             {
-                auto ledger = context.ledgerMaster.getLedgerByHash (
-                    from_hex_text<uint256>(canDeleteStr));
+                auto ledger = context.ledgerMaster.getLedgerByHash(lh);
 
                 if (!ledger)
                     return RPC::make_error(rpcLGR_NOT_FOUND, "ledgerNotFound");
@@ -85,12 +86,12 @@ Json::Value doCanDelete (RPC::Context& context)
             }
             else
             {
-                return RPC::make_error (rpcINVALID_PARAMS);
+                return RPC::make_error(rpcINVALID_PARAMS);
             }
         }
 
         ret[jss::can_delete] =
-                context.app.getSHAMapStore().setCanDelete (canDeleteSeq);
+            context.app.getSHAMapStore().setCanDelete(canDeleteSeq);
     }
     else
     {
@@ -100,4 +101,4 @@ Json::Value doCanDelete (RPC::Context& context)
     return ret;
 }
 
-} // ripple
+}  // namespace ripple

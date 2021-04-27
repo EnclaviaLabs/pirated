@@ -27,36 +27,25 @@
 
 namespace ripple {
 
-class SetRegularKey
-    : public Transactor
+class SetRegularKey : public Transactor
 {
 public:
-    explicit SetRegularKey (ApplyContext& ctx)
-        : Transactor(ctx)
+    static constexpr ConsequencesFactoryType ConsequencesFactory{Blocker};
+
+    explicit SetRegularKey(ApplyContext& ctx) : Transactor(ctx)
     {
     }
 
-    static
-    bool
-    affectsSubsequentTransactionAuth(STTx const& tx)
-    {
-        return true;
-    }
+    static NotTEC
+    preflight(PreflightContext const& ctx);
 
-    static
-    NotTEC
-    preflight (PreflightContext const& ctx);
+    static FeeUnit64
+    calculateBaseFee(ReadView const& view, STTx const& tx);
 
-    static
-    std::uint64_t
-    calculateBaseFee (
-        ReadView const& view,
-        STTx const& tx);
-
-    TER doApply () override;
+    TER
+    doApply() override;
 };
 
-} // ripple
+}  // namespace ripple
 
 #endif
-

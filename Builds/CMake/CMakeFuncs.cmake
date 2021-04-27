@@ -1,95 +1,4 @@
 
-## "target" parsing..DEPRECATED and will be removed in future
-macro(parse_target)
-  if (target)
-    # Parse the target
-    set(remaining ${target})
-    while (remaining)
-      # get the component up to the next dot or end
-      string(REGEX REPLACE "^\\.?([^\\.]+).*$" "\\1" cur_component ${remaining})
-      string(REGEX REPLACE "^\\.?[^\\.]+(.*$)" "\\1" remaining ${remaining})
-
-      if (${cur_component} STREQUAL gcc)
-        if (DEFINED ENV{GNU_CC})
-          set(CMAKE_C_COMPILER $ENV{GNU_CC})
-        elseif ($ENV{CC} MATCHES .*gcc.*)
-          set(CMAKE_C_COMPILER $ENV{CC})
-        else()
-          find_program(CMAKE_C_COMPILER gcc)
-        endif()
-
-        if (DEFINED ENV{GNU_CXX})
-          set(CMAKE_CXX_COMPILER $ENV{GNU_CXX})
-        elseif ($ENV{CXX} MATCHES .*g\\+\\+.*)
-          set(CMAKE_CXX_COMPILER $ENV{CXX})
-        else()
-          find_program(CMAKE_CXX_COMPILER g++)
-        endif()
-      endif()
-
-      if (${cur_component} STREQUAL clang)
-        if (DEFINED ENV{CLANG_CC})
-          set(CMAKE_C_COMPILER $ENV{CLANG_CC})
-        elseif ($ENV{CC} MATCHES .*clang.*)
-          set(CMAKE_C_COMPILER $ENV{CC})
-        else()
-          find_program(CMAKE_C_COMPILER clang)
-        endif()
-
-        if (DEFINED ENV{CLANG_CXX})
-          set(CMAKE_CXX_COMPILER $ENV{CLANG_CXX})
-        elseif ($ENV{CXX} MATCHES .*clang.*)
-          set(CMAKE_CXX_COMPILER $ENV{CXX})
-        else()
-          find_program(CMAKE_CXX_COMPILER clang++)
-        endif()
-      endif()
-
-      if (${cur_component} STREQUAL msvc)
-        # TBD
-      endif()
-
-      if (${cur_component} STREQUAL unity)
-        set(unity ON CACHE BOOL "" FORCE)
-      endif()
-
-      if (${cur_component} STREQUAL nounity)
-        set(unity OFF CACHE BOOL "" FORCE)
-      endif()
-
-      if (${cur_component} STREQUAL debug)
-        set(release false)
-      endif()
-
-      if (${cur_component} STREQUAL release)
-        set(release true)
-      endif()
-
-      if (${cur_component} STREQUAL coverage)
-        set(coverage ON CACHE BOOL "" FORCE)
-        set(debug true)
-      endif()
-
-      if (${cur_component} STREQUAL profile)
-        set(profile ON CACHE BOOL "" FORCE)
-      endif()
-    endwhile()
-  endif()
-
-  if(CMAKE_C_COMPILER MATCHES "-NOTFOUND$" OR
-    CMAKE_CXX_COMPILER MATCHES "-NOTFOUND$")
-    message(FATAL_ERROR "Can not find appropriate compiler for target ${target}")
-  endif()
-
-  if (release)
-    set(CMAKE_BUILD_TYPE Release)
-  else()
-    set(CMAKE_BUILD_TYPE Debug)
-  endif()
-endmacro()
-
-############################################################
-
 macro(group_sources_in source_dir curdir)
   file(GLOB children RELATIVE ${source_dir}/${curdir}
     ${source_dir}/${curdir}/*)
@@ -126,10 +35,10 @@ function (print_ep_logs _target)
     COMMENT "${_target} BUILD OUTPUT"
     COMMAND ${CMAKE_COMMAND}
       -DIN_FILE=${STAMP_DIR}/${_target}-build-out.log
-      -P ${CMAKE_SOURCE_DIR}/Builds/CMake/echo_file.cmake
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake/echo_file.cmake
     COMMAND ${CMAKE_COMMAND}
       -DIN_FILE=${STAMP_DIR}/${_target}-build-err.log
-      -P ${CMAKE_SOURCE_DIR}/Builds/CMake/echo_file.cmake)
+      -P ${CMAKE_CURRENT_SOURCE_DIR}/Builds/CMake/echo_file.cmake)
 endfunction ()
 
 #[=========================================================[
@@ -268,7 +177,7 @@ function (git_hash hash_val)
     endif ()
   endif ()
   execute_process (COMMAND ${GIT_EXECUTABLE} "log" "--pretty=${_format}" "-n1"
-                   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                    RESULT_VARIABLE _git_exit_code
                    OUTPUT_VARIABLE _temp_hash
                    OUTPUT_STRIP_TRAILING_WHITESPACE
@@ -285,7 +194,7 @@ function (git_branch branch_val)
   endif ()
   set (_branch "")
   execute_process (COMMAND ${GIT_EXECUTABLE} "rev-parse" "--abbrev-ref" "HEAD"
-                   WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+                   WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
                    RESULT_VARIABLE _git_exit_code
                    OUTPUT_VARIABLE _temp_branch
                    OUTPUT_STRIP_TRAILING_WHITESPACE

@@ -20,17 +20,17 @@
 #ifndef RIPPLE_OVERLAY_PEER_RESERVATION_TABLE_H_INCLUDED
 #define RIPPLE_OVERLAY_PEER_RESERVATION_TABLE_H_INCLUDED
 
-#include <ripple/beast/hash/uhash.h>
 #include <ripple/beast/hash/hash_append.h>
+#include <ripple/beast/hash/uhash.h>
 #include <ripple/beast/utility/Journal.h>
 #include <ripple/json/json_forwards.h>
 #include <ripple/protocol/PublicKey.h>
 
 #define SOCI_USE_BOOST
-#include <boost/optional.hpp>
 #include <soci/soci.h>
 
 #include <mutex>
+#include <optional>
 #include <string>
 #include <unordered_set>
 #include <vector>
@@ -44,19 +44,21 @@ struct PeerReservation final
 {
 public:
     PublicKey nodeId;
-    std::string description {};
+    std::string description{};
 
     auto
     toJson() const -> Json::Value;
 
     template <typename Hasher>
-    friend void hash_append(Hasher& h, PeerReservation const& x) noexcept
+    friend void
+    hash_append(Hasher& h, PeerReservation const& x) noexcept
     {
         using beast::hash_append;
         hash_append(h, x.nodeId);
     }
 
-    friend bool operator<(PeerReservation const& a, PeerReservation const& b)
+    friend bool
+    operator<(PeerReservation const& a, PeerReservation const& b)
     {
         return a.nodeId < b.nodeId;
     }
@@ -67,8 +69,8 @@ public:
 // pass a `PublicKey` directly to `unordered_set.find`.
 struct KeyEqual final
 {
-    bool operator() (
-            PeerReservation const& lhs, PeerReservation const& rhs) const
+    bool
+    operator()(PeerReservation const& lhs, PeerReservation const& rhs) const
     {
         return lhs.nodeId == rhs.nodeId;
     }
@@ -83,7 +85,8 @@ public:
     {
     }
 
-    std::vector<PeerReservation> list() const;
+    std::vector<PeerReservation>
+    list() const;
 
     bool
     contains(PublicKey const& nodeId)
@@ -101,15 +104,14 @@ public:
      * @return the replaced reservation if it existed
      * @throw soci::soci_error
      */
-    auto
-    insert_or_assign(PeerReservation const& reservation)
-        -> boost::optional<PeerReservation>;
+    std::optional<PeerReservation>
+    insert_or_assign(PeerReservation const& reservation);
 
     /**
      * @return the erased reservation if it existed
      */
-    auto
-    erase(PublicKey const& nodeId) -> boost::optional<PeerReservation>;
+    std::optional<PeerReservation>
+    erase(PublicKey const& nodeId);
 
 private:
     beast::Journal mutable journal_;

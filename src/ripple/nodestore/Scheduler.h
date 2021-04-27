@@ -26,15 +26,18 @@
 namespace ripple {
 namespace NodeStore {
 
+enum class FetchType { synchronous, async };
+
 /** Contains information about a fetch operation. */
 struct FetchReport
 {
-    explicit FetchReport() = default;
+    explicit FetchReport(FetchType fetchType_) : fetchType(fetchType_)
+    {
+    }
 
     std::chrono::milliseconds elapsed;
-    bool isAsync;
-    bool wentToDisk;
-    bool wasFound;
+    FetchType const fetchType;
+    bool wasFound = false;
 };
 
 /** Contains information about a batch write operation. */
@@ -61,23 +64,26 @@ public:
 
     /** Schedules a task.
         Depending on the implementation, the task may be invoked either on
-        the current thread of execution, or an unspecified implementation-defined
-        foreign thread.
+        the current thread of execution, or an unspecified
+       implementation-defined foreign thread.
     */
-    virtual void scheduleTask (Task& task) = 0;
+    virtual void
+    scheduleTask(Task& task) = 0;
 
     /** Reports completion of a fetch
         Allows the scheduler to monitor the node store's performance
     */
-    virtual void onFetch (FetchReport const& report) = 0;
+    virtual void
+    onFetch(FetchReport const& report) = 0;
 
     /** Reports the completion of a batch write
         Allows the scheduler to monitor the node store's performance
     */
-    virtual void onBatchWrite (BatchWriteReport const& report) = 0;
+    virtual void
+    onBatchWrite(BatchWriteReport const& report) = 0;
 };
 
-}
-}
+}  // namespace NodeStore
+}  // namespace ripple
 
 #endif

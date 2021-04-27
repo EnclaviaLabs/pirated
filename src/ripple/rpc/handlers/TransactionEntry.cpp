@@ -32,43 +32,47 @@ namespace ripple {
 //
 // XXX In this case, not specify either ledger does not mean ledger current. It
 // means any ledger.
-Json::Value doTransactionEntry (RPC::Context& context)
+Json::Value
+doTransactionEntry(RPC::JsonContext& context)
 {
     std::shared_ptr<ReadView const> lpLedger;
-    Json::Value jvResult = RPC::lookupLedger (lpLedger, context);
+    Json::Value jvResult = RPC::lookupLedger(lpLedger, context);
 
-    if(! lpLedger)
+    if (!lpLedger)
         return jvResult;
 
-    if(! context.params.isMember (jss::tx_hash))
+    if (!context.params.isMember(jss::tx_hash))
     {
         jvResult[jss::error] = "fieldNotFoundTransaction";
     }
-    else if(jvResult.get(jss::ledger_hash, Json::nullValue).isNull())
+    else if (jvResult.get(jss::ledger_hash, Json::nullValue).isNull())
     {
         // We don't work on ledger current.
 
         // XXX We don't support any transaction yet.
-        jvResult[jss::error]   = "notYetImplemented";
+        jvResult[jss::error] = "notYetImplemented";
     }
     else
     {
         uint256 uTransID;
         // XXX Relying on trusted WSS client. Would be better to have a strict
         // routine, returning success or failure.
-        uTransID.SetHex (context.params[jss::tx_hash].asString ());
-
-        auto [sttx, stobj] = lpLedger->txRead (uTransID);
-        if(! sttx)
+        if (!uTransID.parseHex(context.params[jss::tx_hash].asString()))
         {
-            jvResult[jss::error]   = "transactionNotFound";
+            jvResult[jss::error] = "malformedRequest";
+            return jvResult;
+        }
+
+        auto [sttx, stobj] = lpLedger->txRead(uTransID);
+        if (!sttx)
+        {
+            jvResult[jss::error] = "transactionNotFound";
         }
         else
         {
-            jvResult[jss::tx_json] = sttx->getJson (JsonOptions::none);
+            jvResult[jss::tx_json] = sttx->getJson(JsonOptions::none);
             if (stobj)
-                jvResult[jss::metadata] =
-                    stobj->getJson (JsonOptions::none);
+                jvResult[jss::metadata] = stobj->getJson(JsonOptions::none);
             // 'accounts'
             // 'engine_...'
             // 'ledger_...'
@@ -78,4 +82,4 @@ Json::Value doTransactionEntry (RPC::Context& context)
     return jvResult;
 }
 
-} // ripple
+}  // namespace ripple

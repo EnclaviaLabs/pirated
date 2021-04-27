@@ -22,18 +22,21 @@
 namespace ripple {
 
 void
-AccountStateSF::gotNode(bool, SHAMapHash const& nodeHash,
-    std::uint32_t ledgerSeq, Blob&& nodeData,
-    SHAMapTreeNode::TNType) const
+AccountStateSF::gotNode(
+    bool,
+    SHAMapHash const& nodeHash,
+    std::uint32_t ledgerSeq,
+    Blob&& nodeData,
+    SHAMapNodeType) const
 {
-    db_.store(hotACCOUNT_NODE, std::move(nodeData),
-        nodeHash.as_uint256(), ledgerSeq);
+    db_.store(
+        hotACCOUNT_NODE, std::move(nodeData), nodeHash.as_uint256(), ledgerSeq);
 }
 
-boost::optional<Blob>
+std::optional<Blob>
 AccountStateSF::getNode(SHAMapHash const& nodeHash) const
 {
     return fp_.getFetchPack(nodeHash.as_uint256());
 }
 
-} // ripple
+}  // namespace ripple

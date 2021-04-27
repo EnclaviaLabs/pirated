@@ -32,9 +32,9 @@ class Consensus_test : public beast::unit_test::suite
     SuiteJournal journal_;
 
 public:
-    Consensus_test ()
-    : journal_ ("Consensus_test", *this)
-    { }
+    Consensus_test() : journal_("Consensus_test", *this)
+    {
+    }
 
     void
     testShouldCloseLedger()
@@ -45,12 +45,12 @@ public:
         ConsensusParms const p{};
 
         // Bizarre times forcibly close
-        BEAST_EXPECT(
-            shouldCloseLedger(true, 10, 10, 10, -10s, 10s, 1s, 1s, p, journal_));
-        BEAST_EXPECT(
-            shouldCloseLedger(true, 10, 10, 10, 100h, 10s, 1s, 1s, p, journal_));
-        BEAST_EXPECT(
-            shouldCloseLedger(true, 10, 10, 10, 10s, 100h, 1s, 1s, p, journal_));
+        BEAST_EXPECT(shouldCloseLedger(
+            true, 10, 10, 10, -10s, 10s, 1s, 1s, p, journal_));
+        BEAST_EXPECT(shouldCloseLedger(
+            true, 10, 10, 10, 100h, 10s, 1s, 1s, p, journal_));
+        BEAST_EXPECT(shouldCloseLedger(
+            true, 10, 10, 10, 10s, 100h, 1s, 1s, p, journal_));
 
         // Rest of network has closed
         BEAST_EXPECT(
@@ -123,7 +123,7 @@ public:
 
         Sim s;
         PeerGroup peers = s.createGroup(1);
-        Peer * peer = peers[0];
+        Peer* peer = peers[0];
         peer->targetLedgers = 1;
         peer->start();
         peer->submit(Tx{1});
@@ -151,10 +151,10 @@ public:
 
         // Connected trust and network graphs with single fixed delay
         peers.trustAndConnect(
-            peers, date::round<milliseconds>(0.2 * parms.ledgerGRANULARITY));
+            peers, round<milliseconds>(0.2 * parms.ledgerGRANULARITY));
 
         // everyone submits their own ID as a TX
-        for (Peer * p : peers)
+        for (Peer* p : peers)
             p->submit(Tx(static_cast<std::uint32_t>(p->id)));
 
         sim.run(1);
@@ -199,11 +199,10 @@ public:
 
             // Fast and slow network connections
             fast.connect(
-                fast, date::round<milliseconds>(0.2 * parms.ledgerGRANULARITY));
+                fast, round<milliseconds>(0.2 * parms.ledgerGRANULARITY));
 
             slow.connect(
-                network,
-                date::round<milliseconds>(1.1 * parms.ledgerGRANULARITY));
+                network, round<milliseconds>(1.1 * parms.ledgerGRANULARITY));
 
             // All peers submit their own ID as a transaction
             for (Peer* peer : network)
@@ -256,12 +255,11 @@ public:
 
                 // Fast and slow network connections
                 fast.connect(
-                    fast,
-                    date::round<milliseconds>(0.2 * parms.ledgerGRANULARITY));
+                    fast, round<milliseconds>(0.2 * parms.ledgerGRANULARITY));
 
                 slow.connect(
                     network,
-                    date::round<milliseconds>(1.1 * parms.ledgerGRANULARITY));
+                    round<milliseconds>(1.1 * parms.ledgerGRANULARITY));
 
                 for (Peer* peer : slow)
                     peer->runAsValidator = isParticipant;
@@ -276,8 +274,8 @@ public:
                 if (BEAST_EXPECT(sim.synchronized()))
                 {
                     // Verify all peers have same LCL but are missing
-                    // transaction 0,1 which was not received by all peers before
-                    // the ledger closed
+                    // transaction 0,1 which was not received by all peers
+                    // before the ledger closed
                     for (Peer* peer : network)
                     {
                         // Closed ledger has all but transaction 0,1
@@ -339,7 +337,6 @@ public:
                         }
                     }
                 }
-
             }
         }
     }
@@ -385,7 +382,7 @@ public:
 
         network.trust(network);
         network.connect(
-            network, date::round<milliseconds>(0.2 * parms.ledgerGRANULARITY));
+            network, round<milliseconds>(0.2 * parms.ledgerGRANULARITY));
 
         // Run consensus without skew until we have a short close time
         // resolution
@@ -455,7 +452,7 @@ public:
             PeerGroup network = minority + majority;
 
             SimDuration delay =
-                date::round<milliseconds>(0.2 * parms.ledgerGRANULARITY);
+                round<milliseconds>(0.2 * parms.ledgerGRANULARITY);
             minority.trustAndConnect(minority + majorityA, delay);
             majority.trustAndConnect(majority, delay);
 
@@ -502,15 +499,15 @@ public:
             // synchronized because nodes 0 and 1 are running one ledger behind
             if (BEAST_EXPECT(sim.branches() == 1))
             {
-                for(Peer const* peer : majority)
+                for (Peer const* peer : majority)
                 {
                     // No jumps for majority nodes
                     BEAST_EXPECT(jumps[peer->id].closeJumps.empty());
                     BEAST_EXPECT(jumps[peer->id].fullyValidatedJumps.empty());
                 }
-                for(Peer const* peer : minority)
+                for (Peer const* peer : minority)
                 {
-                    auto & peerJumps = jumps[peer->id];
+                    auto& peerJumps = jumps[peer->id];
                     // last closed ledger jump between chains
                     {
                         if (BEAST_EXPECT(peerJumps.closeJumps.size() == 1))
@@ -560,8 +557,7 @@ public:
 
             PeerGroup network = loner + clique;
             network.connect(
-                network,
-                date::round<milliseconds>(0.2 * parms.ledgerGRANULARITY));
+                network, round<milliseconds>(0.2 * parms.ledgerGRANULARITY));
 
             // initial round to set prior state
             sim.run(1);
@@ -578,7 +574,7 @@ public:
             sim.run(2);
 
             // Check all peers recovered
-            for (Peer * p: network)
+            for (Peer* p : network)
                 BEAST_EXPECT(p->prevLedgerID() == network[0]->prevLedgerID());
         }
     }
@@ -592,153 +588,98 @@ public:
         // This is a specialized test engineered to yield ledgers with different
         // close times even though the peers believe they had close time
         // consensus on the ledger.
+        ConsensusParms parms;
 
-        for (bool useRoundedCloseTime : {false, true})
+        Sim sim;
+
+        // This requires a group of 4 fast and 2 slow peers to create a
+        // situation in which a subset of peers requires seeing additional
+        // proposals to declare consensus.
+        PeerGroup slow = sim.createGroup(2);
+        PeerGroup fast = sim.createGroup(4);
+        PeerGroup network = fast + slow;
+
+        for (Peer* peer : network)
+            peer->consensusParms = parms;
+
+        // Connected trust graph
+        network.trust(network);
+
+        // Fast and slow network connections
+        fast.connect(fast, round<milliseconds>(0.2 * parms.ledgerGRANULARITY));
+        slow.connect(
+            network, round<milliseconds>(1.1 * parms.ledgerGRANULARITY));
+
+        // Run to the ledger *prior* to decreasing the resolution
+        sim.run(increaseLedgerTimeResolutionEvery - 2);
+
+        // In order to create the discrepency, we want a case where if
+        //   X = effCloseTime(closeTime, resolution, parentCloseTime)
+        //   X != effCloseTime(X, resolution, parentCloseTime)
+        //
+        // That is, the effective close time is not a fixed point. This can
+        // happen if X = parentCloseTime + 1, but a subsequent rounding goes
+        // to the next highest multiple of resolution.
+
+        // So we want to find an offset  (now + offset) % 30s = 15
+        //                               (now + offset) % 20s = 15
+        // This way, the next ledger will close and round up   Due to the
+        // network delay settings, the round of consensus will take 5s, so
+        // the next ledger's close time will
+
+        NetClock::duration when = network[0]->now().time_since_epoch();
+
+        // Check we are before the 30s to 20s transition
+        NetClock::duration resolution =
+            network[0]->lastClosedLedger.closeTimeResolution();
+        BEAST_EXPECT(resolution == NetClock::duration{30s});
+
+        while (((when % NetClock::duration{30s}) != NetClock::duration{15s}) ||
+               ((when % NetClock::duration{20s}) != NetClock::duration{15s}))
+            when += 1s;
+        // Advance the clock without consensus running (IS THIS WHAT
+        // PREVENTS IT IN PRACTICE?)
+        sim.scheduler.step_for(NetClock::time_point{when} - network[0]->now());
+
+        // Run one more ledger with 30s resolution
+        sim.run(1);
+        if (BEAST_EXPECT(sim.synchronized()))
         {
-            ConsensusParms parms;
-            parms.useRoundedCloseTime = useRoundedCloseTime;
-
-            Sim sim;
-
-            // This requires a group of 4 fast and 2 slow peers to create a
-            // situation in which a subset of peers requires seeing additional
-            // proposals to declare consensus.
-            PeerGroup slow = sim.createGroup(2);
-            PeerGroup fast = sim.createGroup(4);
-            PeerGroup network = fast + slow;
-
+            // close time should be ahead of clock time since we engineered
+            // the close time to round up
             for (Peer* peer : network)
-                peer->consensusParms = parms;
-
-            // Connected trust graph
-            network.trust(network);
-
-            // Fast and slow network connections
-            fast.connect(
-                fast, date::round<milliseconds>(0.2 * parms.ledgerGRANULARITY));
-            slow.connect(
-                network,
-                date::round<milliseconds>(1.1 * parms.ledgerGRANULARITY));
-
-            // Run to the ledger *prior* to decreasing the resolution
-            sim.run(increaseLedgerTimeResolutionEvery - 2);
-
-            // In order to create the discrepency, we want a case where if
-            //   X = effCloseTime(closeTime, resolution, parentCloseTime)
-            //   X != effCloseTime(X, resolution, parentCloseTime)
-            //
-            // That is, the effective close time is not a fixed point. This can
-            // happen if X = parentCloseTime + 1, but a subsequent rounding goes
-            // to the next highest multiple of resolution.
-
-            // So we want to find an offset  (now + offset) % 30s = 15
-            //                               (now + offset) % 20s = 15
-            // This way, the next ledger will close and round up   Due to the
-            // network delay settings, the round of consensus will take 5s, so
-            // the next ledger's close time will
-
-            NetClock::duration when = network[0]->now().time_since_epoch();
-
-            // Check we are before the 30s to 20s transition
-            NetClock::duration resolution =
-                network[0]->lastClosedLedger.closeTimeResolution();
-            BEAST_EXPECT(resolution == NetClock::duration{30s});
-
-            while (
-                ((when % NetClock::duration{30s}) != NetClock::duration{15s}) ||
-                ((when % NetClock::duration{20s}) != NetClock::duration{15s}))
-                when += 1s;
-            // Advance the clock without consensus running (IS THIS WHAT
-            // PREVENTS IT IN PRACTICE?)
-            sim.scheduler.step_for(
-                NetClock::time_point{when} - network[0]->now());
-
-            // Run one more ledger with 30s resolution
-            sim.run(1);
-            if (BEAST_EXPECT(sim.synchronized()))
             {
-                // close time should be ahead of clock time since we engineered
-                // the close time to round up
-                for (Peer* peer : network)
-                {
-                    BEAST_EXPECT(
-                        peer->lastClosedLedger.closeTime() > peer->now());
-                    BEAST_EXPECT(peer->lastClosedLedger.closeAgree());
-                }
-            }
-
-            // All peers submit their own ID as a transaction
-            for (Peer* peer : network)
-                peer->submit(Tx{static_cast<std::uint32_t>(peer->id)});
-
-            // Run 1 more round, this time it will have a decreased
-            // resolution of 20 seconds.
-
-            // The network delays are engineered so that the slow peers
-            // initially have the wrong tx hash, but they see a majority
-            // of agreement from their peers and declare consensus
-            //
-            // The trick is that everyone starts with a raw close time of
-            //  84681s
-            // Which has
-            //   effCloseTime(86481s, 20s,  86490s) = 86491s
-            // However, when the slow peers update their position, they change
-            // the close time to 86451s. The fast peers declare consensus with
-            // the 86481s as their position still.
-            //
-            // When accepted the ledger
-            // - fast peers use eff(86481s) -> 86491s as the close time
-            // - slow peers use eff(eff(86481s)) -> eff(86491s) -> 86500s!
-
-            sim.run(1);
-
-            if (parms.useRoundedCloseTime)
-            {
-                BEAST_EXPECT(sim.synchronized());
-            }
-            else
-            {
-                // Not currently synchronized
-                BEAST_EXPECT(!sim.synchronized());
-
-                // All slow peers agreed on LCL
-                BEAST_EXPECT(std::all_of(
-                    slow.begin(), slow.end(), [&slow](Peer const* p) {
-                        return p->lastClosedLedger.id() ==
-                            slow[0]->lastClosedLedger.id();
-                    }));
-
-                // All fast peers agreed on LCL
-                BEAST_EXPECT(std::all_of(
-                    fast.begin(), fast.end(), [&fast](Peer const* p) {
-                        return p->lastClosedLedger.id() ==
-                            fast[0]->lastClosedLedger.id();
-                    }));
-
-                Ledger const& slowLCL = slow[0]->lastClosedLedger;
-                Ledger const& fastLCL = fast[0]->lastClosedLedger;
-
-                // Agree on parent close and close resolution
-                BEAST_EXPECT(
-                    slowLCL.parentCloseTime() == fastLCL.parentCloseTime());
-                BEAST_EXPECT(
-                    slowLCL.closeTimeResolution() ==
-                    fastLCL.closeTimeResolution());
-
-                // Close times disagree ...
-                BEAST_EXPECT(slowLCL.closeTime() != fastLCL.closeTime());
-                // Effective close times agree! The slow peer already rounded!
-                BEAST_EXPECT(
-                    effCloseTime(
-                        slowLCL.closeTime(),
-                        slowLCL.closeTimeResolution(),
-                        slowLCL.parentCloseTime()) ==
-                    effCloseTime(
-                        fastLCL.closeTime(),
-                        fastLCL.closeTimeResolution(),
-                        fastLCL.parentCloseTime()));
+                BEAST_EXPECT(peer->lastClosedLedger.closeTime() > peer->now());
+                BEAST_EXPECT(peer->lastClosedLedger.closeAgree());
             }
         }
+
+        // All peers submit their own ID as a transaction
+        for (Peer* peer : network)
+            peer->submit(Tx{static_cast<std::uint32_t>(peer->id)});
+
+        // Run 1 more round, this time it will have a decreased
+        // resolution of 20 seconds.
+
+        // The network delays are engineered so that the slow peers
+        // initially have the wrong tx hash, but they see a majority
+        // of agreement from their peers and declare consensus
+        //
+        // The trick is that everyone starts with a raw close time of
+        //  84681s
+        // Which has
+        //   effCloseTime(86481s, 20s,  86490s) = 86491s
+        // However, when the slow peers update their position, they change
+        // the close time to 86451s. The fast peers declare consensus with
+        // the 86481s as their position still.
+        //
+        // When accepted the ledger
+        // - fast peers use eff(86481s) -> 86491s as the close time
+        // - slow peers use eff(eff(86481s)) -> eff(86491s) -> 86500s!
+
+        sim.run(1);
+
+        BEAST_EXPECT(sim.synchronized());
     }
 
     void
@@ -767,7 +708,7 @@ public:
             PeerGroup network = a + b;
 
             SimDuration delay =
-                date::round<milliseconds>(0.2 * parms.ledgerGRANULARITY);
+                round<milliseconds>(0.2 * parms.ledgerGRANULARITY);
             a.trustAndConnect(a, delay);
             b.trustAndConnect(b, delay);
 
@@ -813,8 +754,7 @@ public:
         validators.trust(validators);
         center.trust(validators);
 
-        SimDuration delay =
-                date::round<milliseconds>(0.2 * parms.ledgerGRANULARITY);
+        SimDuration delay = round<milliseconds>(0.2 * parms.ledgerGRANULARITY);
         validators.connect(center, delay);
 
         center[0]->runAsValidator = false;
@@ -823,7 +763,7 @@ public:
         sim.run(1);
 
         // everyone submits their own ID as a TX and relay it to peers
-        for (Peer * p : validators)
+        for (Peer* p : validators)
             p->submit(Tx(static_cast<std::uint32_t>(p->id)));
 
         sim.run(1);
@@ -831,7 +771,6 @@ public:
         // All peers are in sync
         BEAST_EXPECT(sim.synchronized());
     }
-
 
     // Helper collector for testPreferredByBranch
     // Invasively disconnects network at bad times to cause splits
@@ -857,7 +796,6 @@ public:
         on(csf::PeerID, csf::SimTime, E const&)
         {
         }
-
 
         void
         on(csf::PeerID who, csf::SimTime, csf::FullyValidateLedger const& e)
@@ -885,8 +823,6 @@ public:
                 network.connect(groupCsplit, delay);
             }
         }
-
-
     };
 
     void
@@ -914,7 +850,8 @@ public:
         //   validates C. The rest of the C nodes split at just the right time
         //   such that they never see any C validations but their own.
         // - The C nodes continue and generate 8 different child ledgers.
-        // - Meanwhile, the D nodes only saw 1 validation for C and 2 validations
+        // - Meanwhile, the D nodes only saw 1 validation for C and 2
+        // validations
         //   for B.
         // - The network reconnects and the validations for generation 3 ledgers
         //   are observed (D and the 8 C's)
@@ -923,7 +860,6 @@ public:
         //   EVEN though C was fully validated by one node
         // - In the new approach, 2 votes for D are not enough to outweight the
         //   8 implicit votes for C, so nodes will avalanche to C instead
-
 
         ConsensusParms const parms{};
         Sim sim;
@@ -938,10 +874,8 @@ public:
         PeerGroup groupNotFastC = groupABD + groupCsplit;
         PeerGroup network = groupABD + groupCsplit + groupCfast;
 
-        SimDuration delay = date::round<milliseconds>(
-            0.2 * parms.ledgerGRANULARITY);
-        SimDuration fDelay = date::round<milliseconds>(
-            0.1 * parms.ledgerGRANULARITY);
+        SimDuration delay = round<milliseconds>(0.2 * parms.ledgerGRANULARITY);
+        SimDuration fDelay = round<milliseconds>(0.1 * parms.ledgerGRANULARITY);
 
         network.trust(network);
         // C must have a shorter delay to see all the validations before the
@@ -959,10 +893,9 @@ public:
 
         // Next round generates B and C
         // To force B, we inject an extra transaction in to those nodes
-        for(Peer * peer : groupABD)
+        for (Peer* peer : groupABD)
         {
-            peer->txInjections.emplace(
-                    peer->lastClosedLedger.seq(), Tx{42});
+            peer->txInjections.emplace(peer->lastClosedLedger.seq(), Tx{42});
         }
         // The Disruptor will ensure that nodes disconnect before the C
         // validations make it to all but the fastC node
@@ -974,7 +907,7 @@ public:
         BEAST_EXPECT(sim.branches() == 1);
 
         //  Run another round to generate the 8 different C' ledgers
-        for (Peer * p : network)
+        for (Peer* p : network)
             p->submit(Tx(static_cast<std::uint32_t>(p->id)));
         sim.run(1);
 
@@ -985,11 +918,11 @@ public:
         // Disruptor will reconnect all but the fastC node
         sim.run(1);
 
-        if(BEAST_EXPECT(sim.branches() == 1))
+        if (BEAST_EXPECT(sim.branches() == 1))
         {
             BEAST_EXPECT(sim.synchronized());
         }
-        else // old approach caused a fork
+        else  // old approach caused a fork
         {
             BEAST_EXPECT(sim.branches(groupNotFastC) == 1);
             BEAST_EXPECT(sim.synchronized(groupNotFastC) == 1);
@@ -1052,8 +985,7 @@ public:
 
         ConsensusParms const parms{};
         Sim sim;
-        SimDuration delay =
-            date::round<milliseconds>(0.2 * parms.ledgerGRANULARITY);
+        SimDuration delay = round<milliseconds>(0.2 * parms.ledgerGRANULARITY);
 
         PeerGroup behind = sim.createGroup(3);
         PeerGroup ahead = sim.createGroup(2);

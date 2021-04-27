@@ -16,14 +16,9 @@ target_compile_definitions (opts
       BOOST_BEAST_ALLOW_DEPRECATED
       BOOST_FILESYSTEM_DEPRECATED
     >
-    $<$<BOOL:${beast_hashers}>:
-      USE_BEAST_HASHER
-    >
     $<$<BOOL:${beast_no_unit_test_inline}>:BEAST_NO_UNIT_TEST_INLINE=1>
     $<$<BOOL:${beast_disable_autolink}>:BEAST_DONT_AUTOLINK_TO_WIN32_LIBRARIES=1>
-    $<$<BOOL:${single_io_service_thread}>:RIPPLE_SINGLE_IO_SERVICE_THREAD=1>
-    # doesn't currently compile ? :
-    $<$<BOOL:${verify_nodeobject_keys}>:RIPPLE_VERIFY_NODEOBJECT_KEYS=1>)
+    $<$<BOOL:${single_io_service_thread}>:RIPPLE_SINGLE_IO_SERVICE_THREAD=1>)
 target_compile_options (opts
   INTERFACE
     $<$<AND:$<BOOL:${is_gcc}>,$<COMPILE_LANGUAGE:CXX>>:-Wsuggest-override>

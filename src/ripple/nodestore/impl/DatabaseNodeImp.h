@@ -20,8 +20,9 @@
 #ifndef RIPPLE_NODESTORE_DATABASENODEIMP_H_INCLUDED
 #define RIPPLE_NODESTORE_DATABASENODEIMP_H_INCLUDED
 
-#include <ripple/nodestore/Database.h>
+#include <ripple/basics/TaggedCache.h>
 #include <ripple/basics/chrono.h>
+#include <ripple/nodestore/Database.h>
 
 namespace ripple {
 namespace NodeStore {
@@ -31,31 +32,61 @@ class DatabaseNodeImp : public Database
 public:
     DatabaseNodeImp() = delete;
     DatabaseNodeImp(DatabaseNodeImp const&) = delete;
-    DatabaseNodeImp& operator=(DatabaseNodeImp const&) = delete;
+    DatabaseNodeImp&
+    operator=(DatabaseNodeImp const&) = delete;
 
     DatabaseNodeImp(
         std::string const& name,
         Scheduler& scheduler,
         int readThreads,
         Stoppable& parent,
-        std::unique_ptr<Backend> backend,
+        std::shared_ptr<Backend> backend,
         Section const& config,
         beast::Journal j)
         : Database(name, parent, scheduler, readThreads, config, j)
-        , pCache_(std::make_shared<TaggedCache<uint256, NodeObject>>(
-            name, cacheTargetSize, cacheTargetAge, stopwatch(), j))
-        , nCache_(std::make_shared<KeyCache<uint256>>(
-            name, stopwatch(), cacheTargetSize, cacheTargetAge))
+        , cache_(nullptr)
         , backend_(std::move(backend))
     {
+        std::optional<int> cacheSize, cacheAge;
+        if (config.exists("cache_size"))
+        {
+            cacheSize = get<int>(config, "cache_size");
+            if (cacheSize.value() < 0)
+            {
+                Throw<std::runtime_error>(
+                    "Specified negative value for cache_size");
+            }
+        }
+        if (config.exists("cache_age"))
+        {
+            cacheAge = get<int>(config, "cache_age");
+            if (cacheAge.value() < 0)
+            {
+                Throw<std::runtime_error>(
+                    "Specified negative value for cache_age");
+            }
+        }
+        if (cacheSize || cacheAge)
+        {
+            if (!cacheSize || *cacheSize == 0)
+                cacheSize = 16384;
+            if (!cacheAge || *cacheAge == 0)
+                cacheAge = 5;
+            cache_ = std::make_shared<TaggedCache<uint256, NodeObject>>(
+                name,
+                cacheSize.value(),
+                std::chrono::minutes{cacheAge.value()},
+                stopwatch(),
+                j);
+        }
         assert(backend_);
         setParent(parent);
     }
 
     ~DatabaseNodeImp() override
     {
-        // Stop threads before data members are destroyed.
-        stopThreads();
+        // Stop read threads in base before data members are destroyed
+        stopReadThreads();
     }
 
     std::string
@@ -77,68 +108,59 @@ public:
     }
 
     void
-    store(NodeObjectType type, Blob&& data,
-        uint256 const& hash, std::uint32_t seq) override;
+    store(NodeObjectType type, Blob&& data, uint256 const& hash, std::uint32_t)
+        override;
 
-    std::shared_ptr<NodeObject>
-    fetch(uint256 const& hash, std::uint32_t seq) override
+    bool isSameDB(std::uint32_t, std::uint32_t) override
     {
-        return doFetch(hash, seq, *pCache_, *nCache_, false);
+        // only one database
+        return true;
     }
-
-    bool
-    asyncFetch(uint256 const& hash, std::uint32_t seq,
-        std::shared_ptr<NodeObject>& object) override;
-
-    bool
-    copyLedger(std::shared_ptr<Ledger const> const& ledger) override
-    {
-        return Database::copyLedger(
-            *backend_, *ledger, pCache_, nCache_, nullptr);
-    }
-
-    int
-    getDesiredAsyncReadCount(std::uint32_t seq) override
-    {
-        // We prefer a client not fill our cache
-        // We don't want to push data out of the cache
-        // before it's retrieved
-        return pCache_->getTargetSize() / asyncDivider;
-    }
-
-    float
-    getCacheHitRate() override {return pCache_->getHitRate();}
-
     void
-    tune(int size, std::chrono::seconds age) override;
+    sync() override
+    {
+        backend_->sync();
+    }
+
+    std::vector<std::shared_ptr<NodeObject>>
+    fetchBatch(std::vector<uint256> const& hashes);
+
+    bool
+    storeLedger(std::shared_ptr<Ledger const> const& srcLedger) override
+    {
+        return Database::storeLedger(*srcLedger, backend_);
+    }
 
     void
     sweep() override;
 
 private:
-    // Positive cache
-    std::shared_ptr<TaggedCache<uint256, NodeObject>> pCache_;
-
-    // Negative cache
-    std::shared_ptr<KeyCache<uint256>> nCache_;
-
+    // Cache for database objects. This cache is not always initialized. Check
+    // for null before using.
+    std::shared_ptr<TaggedCache<uint256, NodeObject>> cache_;
     // Persistent key/value storage
-    std::unique_ptr<Backend> backend_;
+    std::shared_ptr<Backend> backend_;
 
     std::shared_ptr<NodeObject>
-    fetchFrom(uint256 const& hash, std::uint32_t seq) override
-    {
-        return fetchInternal(hash, *backend_);
-    }
+    fetchNodeObject(
+        uint256 const& hash,
+        std::uint32_t,
+        FetchReport& fetchReport) override;
 
     void
     for_each(std::function<void(std::shared_ptr<NodeObject>)> f) override
     {
         backend_->for_each(f);
     }
+
+    std::optional<Backend::Counters<std::uint64_t>>
+    getCounters() const override
+    {
+        return backend_->counters();
+    }
 };
 
-}
-}
+}  // namespace NodeStore
+}  // namespace ripple
 
 #endif

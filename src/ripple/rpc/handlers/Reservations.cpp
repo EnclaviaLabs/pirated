@@ -25,16 +25,18 @@
 #include <ripple/rpc/Context.h>
 #include <ripple/rpc/handlers/Handlers.h>
 
-#include <boost/optional.hpp>
-
+#include <optional>
 #include <string>
 #include <utility>
 
 namespace ripple {
 
 Json::Value
-doPeerReservationsAdd(RPC::Context& context)
+doPeerReservationsAdd(RPC::JsonContext& context)
 {
+    if (context.app.config().reporting())
+        return rpcError(rpcREPORTING_UNSUPPORTED);
+
     auto const& params = context.params;
 
     if (!params.isMember(jss::public_key))
@@ -68,14 +70,14 @@ doPeerReservationsAdd(RPC::Context& context)
 
     // channel_verify takes a key in both base58 and hex.
     // @nikb prefers that we take only base58.
-    boost::optional<PublicKey> optPk = parseBase58<PublicKey>(
+    std::optional<PublicKey> optPk = parseBase58<PublicKey>(
         TokenType::NodePublic, params[jss::public_key].asString());
     if (!optPk)
         return rpcError(rpcPUBLIC_MALFORMED);
     PublicKey const& nodeId = *optPk;
 
     auto const previous = context.app.peerReservations().insert_or_assign(
-            PeerReservation{nodeId, desc});
+        PeerReservation{nodeId, desc});
 
     Json::Value result{Json::objectValue};
     if (previous)
@@ -86,8 +88,11 @@ doPeerReservationsAdd(RPC::Context& context)
 }
 
 Json::Value
-doPeerReservationsDel(RPC::Context& context)
+doPeerReservationsDel(RPC::JsonContext& context)
 {
+    if (context.app.config().reporting())
+        return rpcError(rpcREPORTING_UNSUPPORTED);
+
     auto const& params = context.params;
 
     // We repeat much of the parameter parsing from `doPeerReservationsAdd`.
@@ -96,7 +101,7 @@ doPeerReservationsDel(RPC::Context& context)
     if (!params[jss::public_key].isString())
         return RPC::expected_field_error(jss::public_key, "a string");
 
-    boost::optional<PublicKey> optPk = parseBase58<PublicKey>(
+    std::optional<PublicKey> optPk = parseBase58<PublicKey>(
         TokenType::NodePublic, params[jss::public_key].asString());
     if (!optPk)
         return rpcError(rpcPUBLIC_MALFORMED);
@@ -113,8 +118,11 @@ doPeerReservationsDel(RPC::Context& context)
 }
 
 Json::Value
-doPeerReservationsList(RPC::Context& context)
+doPeerReservationsList(RPC::JsonContext& context)
 {
+    if (context.app.config().reporting())
+        return rpcError(rpcREPORTING_UNSUPPORTED);
+
     auto const& reservations = context.app.peerReservations().list();
     // Enumerate the reservations in context.app.peerReservations()
     // as a Json::Value.

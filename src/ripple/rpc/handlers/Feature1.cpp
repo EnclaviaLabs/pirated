@@ -20,33 +20,34 @@
 #include <ripple/app/ledger/LedgerMaster.h>
 #include <ripple/app/main/Application.h>
 #include <ripple/app/misc/AmendmentTable.h>
+#include <ripple/net/RPCErr.h>
 #include <ripple/protocol/ErrorCodes.h>
 #include <ripple/protocol/jss.h>
-#include <ripple/net/RPCErr.h>
 #include <ripple/rpc/Context.h>
-#include <ripple/beast/core/LexicalCast.h>
 
 namespace ripple {
-
 
 // {
 //   feature : <feature>
 //   vetoed : true/false
 // }
-Json::Value doFeature (RPC::Context& context)
+Json::Value
+doFeature(RPC::JsonContext& context)
 {
+    if (context.app.config().reporting())
+        return rpcError(rpcREPORTING_UNSUPPORTED);
 
     // Get majority amendment status
     majorityAmendments_t majorities;
 
     if (auto const valLedger = context.ledgerMaster.getValidatedLedger())
-        majorities = getMajorityAmendments (*valLedger);
+        majorities = getMajorityAmendments(*valLedger);
 
-    auto& table = context.app.getAmendmentTable ();
+    auto& table = context.app.getAmendmentTable();
 
-    if (!context.params.isMember (jss::feature))
+    if (!context.params.isMember(jss::feature))
     {
-        auto features = table.getJson(0);
+        auto features = table.getJson();
 
         for (auto const& [h, t] : majorities)
         {
@@ -59,30 +60,26 @@ Json::Value doFeature (RPC::Context& context)
         return jvReply;
     }
 
-    auto feature = table.find (
-        context.params[jss::feature].asString());
+    auto feature = table.find(context.params[jss::feature].asString());
 
-    if (!feature &&
-        !feature.SetHexExact (context.params[jss::feature].asString ()))
-        return rpcError (rpcBAD_FEATURE);
+    if (!feature && !feature.parseHex(context.params[jss::feature].asString()))
+        return rpcError(rpcBAD_FEATURE);
 
-    if (context.params.isMember (jss::vetoed))
+    if (context.params.isMember(jss::vetoed))
     {
-        if (context.params[jss::vetoed].asBool ())
-            context.app.getAmendmentTable().veto (feature);
+        if (context.params[jss::vetoed].asBool())
+            table.veto(feature);
         else
-            context.app.getAmendmentTable().unVeto(feature);
+            table.unVeto(feature);
     }
 
     Json::Value jvReply = table.getJson(feature);
 
-    auto m = majorities.find (feature);
+    auto m = majorities.find(feature);
     if (m != majorities.end())
-        jvReply [jss::majority] =
-            m->second.time_since_epoch().count();
+        jvReply[jss::majority] = m->second.time_since_epoch().count();
 
     return jvReply;
 }
 
-
-} // ripple
+}  // namespace ripple

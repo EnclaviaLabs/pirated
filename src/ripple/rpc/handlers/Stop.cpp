@@ -26,15 +26,16 @@
 namespace ripple {
 
 namespace RPC {
-struct Context;
+struct JsonContext;
 }
 
-Json::Value doStop (RPC::Context& context)
+Json::Value
+doStop(RPC::JsonContext& context)
 {
     std::unique_lock lock{context.app.getMasterMutex()};
-    context.app.signalStop ();
+    context.app.signalStop();
 
-    return RPC::makeObjectValue (systemName () + " server stopping");
+    return RPC::makeObjectValue(systemName() + " server stopping");
 }
 
-} // ripple
+}  // namespace ripple

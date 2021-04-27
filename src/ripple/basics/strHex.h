@@ -17,37 +17,13 @@
 */
 //==============================================================================
 
-// Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2011 The Bitcoin developers
-// Distributed under the MIT/X11 software license, see the accompanying
-// file license.txt or http://www.opensource.org/licenses/mit-license.php.
-
 #ifndef RIPPLE_BASICS_STRHEX_H_INCLUDED
 #define RIPPLE_BASICS_STRHEX_H_INCLUDED
-
-#include <cassert>
-#include <string>
 
 #include <boost/algorithm/hex.hpp>
 #include <boost/endian/conversion.hpp>
 
 namespace ripple {
-
-/** Converts an integer to the corresponding hex digit
-    @param iDigit 0-15 inclusive
-    @return a character from '0'-'9' or 'A'-'F'.
-*/
-inline
-char
-charHex (unsigned int digit)
-{
-    static
-    char const xtab[] = "0123456789ABCDEF";
-
-    assert (digit < 16);
-
-    return xtab[digit];
-}
 
 /** @{ */
 /** Converts a hex digit to the corresponding integer
@@ -55,13 +31,12 @@ charHex (unsigned int digit)
     @return an integer from 0 to 15 on success; -1 on failure.
 */
 int
-charUnHex (unsigned char c);
+charUnHex(unsigned char c);
 
-inline
-int
-charUnHex (char c)
+inline int
+charUnHex(char c)
 {
-    return charUnHex (static_cast<unsigned char>(c));
+    return charUnHex(static_cast<unsigned char>(c));
 }
 /** @} */
 
@@ -81,19 +56,12 @@ strHex(FwdIt begin, FwdIt end)
 }
 
 template <class T, class = decltype(std::declval<T>().begin())>
-std::string strHex(T const& from)
+std::string
+strHex(T const& from)
 {
     return strHex(from.begin(), from.end());
 }
 
-inline std::string strHex (const std::uint64_t uiHost)
-{
-    uint64_t uBig    = boost::endian::native_to_big (uiHost);
-
-    auto const begin = (unsigned char*) &uBig;
-    auto const end   = begin + sizeof(uBig);
-    return strHex(begin, end);
-}
-}
+}  // namespace ripple
 
 #endif

@@ -20,23 +20,126 @@
 #ifndef RIPPLE_TX_APPLYSTEPS_H_INCLUDED
 #define RIPPLE_TX_APPLYSTEPS_H_INCLUDED
 
-#include <ripple/ledger/ApplyViewImpl.h>
 #include <ripple/beast/utility/Journal.h>
+#include <ripple/ledger/ApplyViewImpl.h>
 
 namespace ripple {
 
 class Application;
 class STTx;
+class TxQ;
 
 /** Return true if the transaction can claim a fee (tec),
     and the `ApplyFlags` do not allow soft failures.
  */
-inline
-bool
+inline bool
 isTecClaimHardFail(TER ter, ApplyFlags flags)
 {
     return isTecClaim(ter) && !(flags & tapRETRY);
 }
+
+/** Class describing the consequences to the account
+    of applying a transaction if the transaction consumes
+    the maximum XRP allowed.
+*/
+class TxConsequences
+{
+public:
+    /// Describes how the transaction affects subsequent
+    /// transactions
+    enum Category {
+        /// Moves currency around, creates offers, etc.
+        normal = 0,
+        /// Affects the ability of subsequent transactions
+        /// to claim a fee. Eg. `SetRegularKey`
+        blocker
+    };
+
+private:
+    /// Describes how the transaction affects subsequent
+    /// transactions
+    bool isBlocker_;
+    /// Transaction fee
+    XRPAmount fee_;
+    /// Does NOT include the fee.
+    XRPAmount potentialSpend_;
+    /// SeqProxy of transaction.
+    SeqProxy seqProx_;
+    /// Number of sequences consumed.
+    std::uint32_t sequencesConsumed_;
+
+public:
+    // Constructor if preflight returns a value other than tesSUCCESS.
+    // Asserts if tesSUCCESS is passed.
+    explicit TxConsequences(NotTEC pfresult);
+
+    /// Constructor if the STTx has no notable consequences for the TxQ.
+    explicit TxConsequences(STTx const& tx);
+
+    /// Constructor for a blocker.
+    TxConsequences(STTx const& tx, Category category);
+
+    /// Constructor for an STTx that may consume more XRP than the fee.
+    TxConsequences(STTx const& tx, XRPAmount potentialSpend);
+
+    /// Constructor for an STTx that consumes more than the usual sequences.
+    TxConsequences(STTx const& tx, std::uint32_t sequencesConsumed);
+
+    /// Copy constructor
+    TxConsequences(TxConsequences const&) = default;
+    /// Copy assignment operator
+    TxConsequences&
+    operator=(TxConsequences const&) = default;
+    /// Move constructor
+    TxConsequences(TxConsequences&&) = default;
+    /// Move assignment operator
+    TxConsequences&
+    operator=(TxConsequences&&) = default;
+
+    /// Fee
+    XRPAmount
+    fee() const
+    {
+        return fee_;
+    }
+
+    /// Potential Spend
+    XRPAmount const&
+    potentialSpend() const
+    {
+        return potentialSpend_;
+    }
+
+    /// SeqProxy
+    SeqProxy
+    seqProxy() const
+    {
+        return seqProx_;
+    }
+
+    /// Sequences consumed
+    std::uint32_t
+    sequencesConsumed() const
+    {
+        return sequencesConsumed_;
+    }
+
+    /// Returns true if the transaction is a blocker.
+    bool
+    isBlocker() const
+    {
+        return isBlocker_;
+    }
+
+    // Return the SeqProxy that would follow this.
+    SeqProxy
+    followingSeq() const
+    {
+        SeqProxy following = seqProx_;
+        following.advanceBy(sequencesConsumed());
+        return following;
+    }
+};
 
 /** Describes the results of the `preflight` check
 
@@ -51,6 +154,8 @@ public:
     STTx const& tx;
     /// From the input - the rules
     Rules const rules;
+    /// Consequences of the transaction
+    TxConsequences const consequences;
     /// From the input - the flags
     ApplyFlags const flags;
     /// From the input - the journal
@@ -60,20 +165,23 @@ public:
     NotTEC const ter;
 
     /// Constructor
-    template<class Context>
-    PreflightResult(Context const& ctx_,
-        NotTEC ter_)
+    template <class Context>
+    PreflightResult(
+        Context const& ctx_,
+        std::pair<NotTEC, TxConsequences> const& result)
         : tx(ctx_.tx)
         , rules(ctx_.rules)
+        , consequences(result.second)
         , flags(ctx_.flags)
         , j(ctx_.j)
-        , ter(ter_)
+        , ter(result.first)
     {
     }
 
     PreflightResult(PreflightResult const&) = default;
     /// Deleted copy assignment operator
-    PreflightResult& operator=(PreflightResult const&) = delete;
+    PreflightResult&
+    operator=(PreflightResult const&) = delete;
 };
 
 /** Describes the results of the `preclaim` check
@@ -101,68 +209,21 @@ public:
     bool const likelyToClaimFee;
 
     /// Constructor
-    template<class Context>
+    template <class Context>
     PreclaimResult(Context const& ctx_, TER ter_)
         : view(ctx_.view)
         , tx(ctx_.tx)
         , flags(ctx_.flags)
         , j(ctx_.j)
         , ter(ter_)
-        , likelyToClaimFee(ter == tesSUCCESS
-            || isTecClaimHardFail(ter, flags))
+        , likelyToClaimFee(ter == tesSUCCESS || isTecClaimHardFail(ter, flags))
     {
     }
 
     PreclaimResult(PreclaimResult const&) = default;
     /// Deleted copy assignment operator
-    PreclaimResult& operator=(PreclaimResult const&) = delete;
-};
-
-/** Structure describing the consequences to the account
-    of applying a transaction if the transaction consumes
-    the maximum XRP allowed.
-
-    @see calculateConsequences
-*/
-struct TxConsequences
-{
-    /// Describes how the transaction affects subsequent
-    /// transactions
-    enum ConsequenceCategory
-    {
-        /// Moves currency around, creates offers, etc.
-        normal = 0,
-        /// Affects the ability of subsequent transactions
-        /// to claim a fee. Eg. `SetRegularKey`
-        blocker
-    };
-
-    /// Describes how the transaction affects subsequent
-    /// transactions
-    ConsequenceCategory const category;
-    /// Transaction fee
-    XRPAmount const fee;
-    /// Does NOT include the fee.
-    XRPAmount const potentialSpend;
-
-    /// Constructor
-    TxConsequences(ConsequenceCategory const category_,
-        XRPAmount const fee_, XRPAmount const spend_)
-        : category(category_)
-        , fee(fee_)
-        , potentialSpend(spend_)
-    {
-    }
-
-    /// Constructor
-    TxConsequences(TxConsequences const&) = default;
-    /// Deleted copy assignment operator
-    TxConsequences& operator=(TxConsequences const&) = delete;
-    /// Constructor
-    TxConsequences(TxConsequences&&) = default;
-    /// Deleted copy assignment operator
-    TxConsequences& operator=(TxConsequences&&) = delete;
-
+    PreclaimResult&
+    operator=(PreclaimResult const&) = delete;
 };
 
 /** Gate a transaction based on static information.
@@ -182,9 +243,12 @@ struct TxConsequences
     other things, the `TER` code.
 */
 PreflightResult
-preflight(Application& app, Rules const& rules,
-    STTx const& tx, ApplyFlags flags,
-        beast::Journal j);
+preflight(
+    Application& app,
+    Rules const& rules,
+    STTx const& tx,
+    ApplyFlags flags,
+    beast::Journal j);
 
 /** Gate a transaction based on static ledger information.
 
@@ -215,8 +279,10 @@ preflight(Application& app, Rules const& rules,
     this transaction.
 */
 PreclaimResult
-preclaim(PreflightResult const& preflightResult,
-    Application& app, OpenView const& view);
+preclaim(
+    PreflightResult const& preflightResult,
+    Application& app,
+    OpenView const& view);
 
 /** Compute only the expected base fee for a transaction.
 
@@ -234,27 +300,22 @@ preclaim(PreflightResult const& preflightResult,
 
     @return The base fee.
 */
-std::uint64_t
-calculateBaseFee(ReadView const& view,
-    STTx const& tx);
+FeeUnit64
+calculateBaseFee(ReadView const& view, STTx const& tx);
 
-/** Determine the XRP balance consequences if a transaction
-    consumes the maximum XRP allowed.
+/** Return the minimum fee that an "ordinary" transaction would pay.
 
-    @pre The transaction has been checked
-    and validated using `preflight`
+    When computing the FeeLevel for a transaction the TxQ sometimes needs
+    the know what an "ordinary" or reference transaction would be required
+    to pay.
 
-    @param preflightResult The result of a previous
-    call to `preflight` for the transaction.
+    @param view The current open ledger.
+    @param tx The transaction so the correct multisigner count is used.
 
-    @return A `TxConsequences` object containing the "worst
-        case" consequences of applying this transaction to
-        a ledger.
-
-    @see TxConsequences
+    @return The base fee in XRPAmount.
 */
-TxConsequences
-calculateConsequences(PreflightResult const& preflightResult);
+XRPAmount
+calculateDefaultBaseFee(ReadView const& view, STTx const& tx);
 
 /** Apply a prechecked transaction to an OpenView.
 
@@ -273,9 +334,8 @@ calculateConsequences(PreflightResult const& preflightResult);
     whether or not the transaction was applied.
 */
 std::pair<TER, bool>
-doApply(PreclaimResult const& preclaimResult,
-    Application& app, OpenView& view);
+doApply(PreclaimResult const& preclaimResult, Application& app, OpenView& view);
 
-}
+}  // namespace ripple
 
 #endif

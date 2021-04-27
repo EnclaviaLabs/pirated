@@ -22,8 +22,8 @@
 
 #include <ripple/beast/core/LockFreeStack.h>
 #include <ripple/beast/utility/Journal.h>
-#include <ripple/core/Job.h>
 #include <ripple/core/ClosureCounter.h>
+#include <ripple/core/Job.h>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -173,7 +173,7 @@ class RootStoppable;
     @note A Stoppable may not be restarted.
 
     The form of the Stoppable tree in the rippled application evolves as
-    the source code changes and reacts to new demands.  As of March in 2017
+    the source code changes and reacts to new demands. As of July in 2020
     the Stoppable tree had this form:
 
     @code
@@ -186,13 +186,14 @@ class RootStoppable;
                                                              |
                                                          JobQueue
                                                              |
-        +-----------+-----------+-----------+-----------+----+--------+
-        |           |           |           |           |             |
-        |       NetworkOPs      |     InboundLedgers    |        OrderbookDB
-        |                       |                       |
-     Overlay           InboundTransactions        LedgerMaster
-        |                                               |
-    PeerFinder                                   LedgerCleaner
+        +------+---------+--------+----------+---+-----------+--+---+
+        |      |         |        |          |   |              |   |
+        |  NetworkOPs    |   InboundLedgers  |   |      OrderbookDB |
+        |                |                   |  GRPCServer          |
+        |                |                   |                  Database
+     Overlay    InboundTransactions     LedgerMaster                |
+        |                                    |                      |
+    PeerFinder                          LedgerCleaner          TaskQueue
 
     @endcode
 */
@@ -200,16 +201,20 @@ class RootStoppable;
 class Stoppable
 {
 protected:
-    Stoppable (std::string name, RootStoppable& root);
+    Stoppable(std::string name, RootStoppable& root);
 
 public:
     /** Create the Stoppable. */
-    Stoppable (std::string name, Stoppable& parent);
+    Stoppable(std::string name, Stoppable& parent);
 
     /** Destroy the Stoppable. */
-    virtual ~Stoppable ();
+    virtual ~Stoppable();
 
-    RootStoppable& getRoot() {return m_root;}
+    RootStoppable&
+    getRoot()
+    {
+        return m_root;
+    }
 
     /** Set the parent of this Stoppable.
 
@@ -217,45 +222,51 @@ public:
         The parent to be set cannot not be stopping.
         Both roots must match.
     */
-    void setParent(Stoppable& parent);
+    void
+    setParent(Stoppable& parent);
 
     /** Returns `true` if the stoppable should stop. */
-    bool isStopping () const;
+    bool
+    isStopping() const;
 
     /** Returns `true` if the requested stop has completed. */
-    bool isStopped () const;
+    bool
+    isStopped() const;
 
     /** Returns `true` if all children have stopped. */
-    bool areChildrenStopped () const;
+    bool
+    areChildrenStopped() const;
 
     /* JobQueue uses this method for Job counting. */
-    inline JobCounter& jobCounter ();
+    inline JobCounter&
+    jobCounter();
 
     /** Sleep or wake up on stop.
 
         @return `true` if we are stopping
     */
     bool
-    alertable_sleep_until(
-        std::chrono::system_clock::time_point const& t);
+    alertable_sleep_until(std::chrono::system_clock::time_point const& t);
 
 protected:
     /** Called by derived classes to indicate that the stoppable has stopped. */
-    void stopped ();
+    void
+    stopped();
 
 private:
     /** Override called during preparation.
         Since all other Stoppable objects in the tree have already been
-        constructed, this provides an opportunity to perform initialization which
-        depends on calling into other Stoppable objects.
-        This call is made on the same thread that called prepare().
-        The default implementation does nothing.
-        Guaranteed to only be called once.
+        constructed, this provides an opportunity to perform initialization
+       which depends on calling into other Stoppable objects. This call is made
+       on the same thread that called prepare(). The default implementation does
+       nothing. Guaranteed to only be called once.
     */
-    virtual void onPrepare ();
+    virtual void
+    onPrepare();
 
     /** Override called during start. */
-    virtual void onStart ();
+    virtual void
+    onStart();
 
     /** Override called when the stop notification is issued.
 
@@ -278,7 +289,8 @@ private:
             Guaranteed only to be called once.
             Must be safe to call from any thread at any time.
     */
-    virtual void onStop ();
+    virtual void
+    onStop();
 
     /** Override called when all children have stopped.
 
@@ -298,37 +310,43 @@ private:
             Guaranteed only to be called once.
             Must be safe to call from any thread at any time.
     */
-    virtual void onChildrenStopped ();
+    virtual void
+    onChildrenStopped();
 
     friend class RootStoppable;
 
     struct Child;
-    using Children = beast::LockFreeStack <Child>;
+    using Children = beast::LockFreeStack<Child>;
 
     struct Child : Children::Node
     {
-        Child (Stoppable* stoppable_) : stoppable (stoppable_)
+        Child(Stoppable* stoppable_) : stoppable(stoppable_)
         {
         }
 
         Stoppable* stoppable;
     };
 
-    void prepareRecursive ();
-    void startRecursive ();
-    void stopAsyncRecursive (beast::Journal j);
-    void stopRecursive (beast::Journal j);
+    void
+    prepareRecursive();
+    void
+    startRecursive();
+    void
+    stopAsyncRecursive(beast::Journal j);
+    void
+    stopRecursive(beast::Journal j);
 
     std::string m_name;
     RootStoppable& m_root;
     Child m_child;
-    std::atomic<bool> m_stopped {false};
-    std::atomic<bool> m_childrenStopped {false};
+    // TODO [C++20]: Use std::atomic_flag instead.
+    std::atomic<bool> m_stopped{false};
+    std::atomic<bool> m_childrenStopped{false};
     Children m_children;
     std::condition_variable m_cv;
-    std::mutex              m_mut;
-    bool                    m_is_stopping = false;
-    bool hasParent_ {false};
+    std::mutex m_mut;
+    bool m_is_stopping = false;
+    bool hasParent_{false};
 };
 
 //------------------------------------------------------------------------------
@@ -336,46 +354,44 @@ private:
 class RootStoppable : public Stoppable
 {
 public:
-    explicit RootStoppable (std::string name);
+    explicit RootStoppable(std::string name);
 
-    virtual ~RootStoppable ();
+    virtual ~RootStoppable();
 
-    bool isStopping() const;
+    bool
+    isStopping() const;
 
-    /** Prepare all contained Stoppable objects.
-        This calls onPrepare for all Stoppable objects in the tree.
+    /** Prepare and start all contained Stoppable objects.
+        This calls onPrepare for all Stoppable objects in the tree, bottom-up,
+        then calls onStart for the same, top-down.
         Calls made after the first have no effect.
         Thread safety:
             May be called from any thread.
     */
-    void prepare ();
-
-    /** Start all contained Stoppable objects.
-        The default implementation does nothing.
-        Calls made after the first have no effect.
-        Thread safety:
-            May be called from any thread.
-    */
-    void start ();
+    void
+    start();
 
     /** Notify a root stoppable and children to stop, and block until stopped.
         Has no effect if the stoppable was already notified.
         This blocks until the stoppable and all of its children have stopped.
-        Undefined behavior results if stop() is called without a previous call
-        to start().
+        Undefined behavior results if stop() is called without finishing
+        a previous call to start().
         Thread safety:
             Safe to call from any thread not associated with a Stoppable.
     */
-    void stop (beast::Journal j);
+    void
+    stop(beast::Journal j);
 
     /** Return true if start() was ever called. */
-    bool started () const
+    bool
+    started() const
     {
-        return m_started;
+        return startExited_;
     }
 
     /* JobQueue uses this method for Job counting. */
-    JobCounter& rootJobCounter ()
+    JobCounter&
+    jobCounter()
     {
         return jobCounter_;
     }
@@ -385,23 +401,13 @@ public:
         @return `true` if we are stopping
     */
     bool
-    alertable_sleep_until(
-        std::chrono::system_clock::time_point const& t);
+    alertable_sleep_until(std::chrono::system_clock::time_point const& t);
 
 private:
-    /*  Notify a root stoppable and children to stop, without waiting.
-        Has no effect if the stoppable was already notified.
-
-        Returns true on the first call to this method, false otherwise.
-
-        Thread safety:
-            Safe to call from any thread at any time.
-    */
-    bool stopAsync(beast::Journal j);
-
-    std::atomic<bool> m_prepared {false};
-    std::atomic<bool> m_started {false};
-    std::atomic<bool> m_calledStop {false};
+    // TODO [C++20]: Use std::atomic_flag instead.
+    std::atomic<bool> startEntered_{false};
+    std::atomic<bool> startExited_{false};
+    std::atomic<bool> stopEntered_{false};
     std::mutex m_;
     std::condition_variable c_;
     JobCounter jobCounter_;
@@ -410,32 +416,32 @@ private:
 
 //------------------------------------------------------------------------------
 
-JobCounter& Stoppable::jobCounter ()
+JobCounter&
+Stoppable::jobCounter()
 {
-    return m_root.rootJobCounter();
+    return m_root.jobCounter();
 }
 
 //------------------------------------------------------------------------------
 
-inline
-bool
+inline bool
 RootStoppable::alertable_sleep_until(
     std::chrono::system_clock::time_point const& t)
 {
     std::unique_lock<std::mutex> lock(m_);
-    if (m_calledStop)
+    if (stopEntered_)
         return true;
-    return c_.wait_until(lock, t, [this]{return m_calledStop.load();});
+    // TODO [C++20]: When `stopEntered_` is changed to a `std::atomic_flag`,
+    // this call to `load` needs to change to a call to `test`.
+    return c_.wait_until(lock, t, [this] { return stopEntered_.load(); });
 }
 
-inline
-bool
-Stoppable::alertable_sleep_until(
-    std::chrono::system_clock::time_point const& t)
+inline bool
+Stoppable::alertable_sleep_until(std::chrono::system_clock::time_point const& t)
 {
     return m_root.alertable_sleep_until(t);
 }
 
-} // ripple
+}  // namespace ripple
 
 #endif

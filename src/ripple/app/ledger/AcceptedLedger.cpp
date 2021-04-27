@@ -18,37 +18,51 @@
 //==============================================================================
 
 #include <ripple/app/ledger/AcceptedLedger.h>
+#include <ripple/app/main/Application.h>
 #include <ripple/basics/Log.h>
 #include <ripple/basics/chrono.h>
 
 namespace ripple {
 
-AcceptedLedger::AcceptedLedger (
+AcceptedLedger::AcceptedLedger(
     std::shared_ptr<ReadView const> const& ledger,
-    AccountIDCache const& accountCache, Logs& logs)
-    : mLedger (ledger)
+    Application& app)
+    : mLedger(ledger)
 {
-    for (auto const& item : ledger->txs)
-    {
-        insert (std::make_shared<AcceptedLedgerTx>(
-            ledger, item.first, item.second, accountCache, logs));
-    }
+    auto insertAll = [&](auto const& txns) {
+        for (auto const& item : txns)
+        {
+            insert(std::make_shared<AcceptedLedgerTx>(
+                ledger,
+                item.first,
+                item.second,
+                app.accountIDCache(),
+                app.logs()));
+        }
+    };
+
+    if (app.config().reporting())
+        insertAll(flatFetchTransactions(*ledger, app));
+    else
+        insertAll(ledger->txs);
 }
 
-void AcceptedLedger::insert (AcceptedLedgerTx::ref at)
+void
+AcceptedLedger::insert(AcceptedLedgerTx::ref at)
 {
-    assert (mMap.find (at->getIndex ()) == mMap.end ());
-    mMap.insert (std::make_pair (at->getIndex (), at));
+    assert(mMap.find(at->getIndex()) == mMap.end());
+    mMap.insert(std::make_pair(at->getIndex(), at));
 }
 
-AcceptedLedgerTx::pointer AcceptedLedger::getTxn (int i) const
+AcceptedLedgerTx::pointer
+AcceptedLedger::getTxn(int i) const
 {
-    map_t::const_iterator it = mMap.find (i);
+    map_t::const_iterator it = mMap.find(i);
 
-    if (it == mMap.end ())
-        return AcceptedLedgerTx::pointer ();
+    if (it == mMap.end())
+        return AcceptedLedgerTx::pointer();
 
     return it->second;
 }
 
-} // ripple
+}  // namespace ripple

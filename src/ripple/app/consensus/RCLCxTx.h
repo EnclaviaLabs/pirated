@@ -91,7 +91,7 @@ public:
         insert(Tx const& t)
         {
             return map_->addItem(
-                SHAMapItem{t.id(), t.tx_.peekData()}, true, false);
+                SHAMapNodeType::tnTRANSACTION_NM, SHAMapItem{t.tx_});
         }
 
         /** Remove a transaction from the set.
@@ -115,7 +115,7 @@ public:
         assert(map_);
     }
 
-    /** Constructor from a previosly created MutableTxSet
+    /** Constructor from a previously created MutableTxSet
 
         @param m MutableTxSet that will become fixed
      */
@@ -142,8 +142,8 @@ public:
         @note Since find may not succeed, this returns a
               `std::shared_ptr<const SHAMapItem>` rather than a Tx, which
               cannot refer to a missing transaction.  The generic consensus
-              code use the shared_ptr semantics to know whether the find
-              was succesfully and properly creates a Tx as needed.
+              code uses the shared_ptr semantics to know whether the find
+              was successful and properly creates a Tx as needed.
     */
     std::shared_ptr<const SHAMapItem> const&
     find(Tx::ID const& entry) const
@@ -178,9 +178,7 @@ public:
         std::map<uint256, bool> ret;
         for (auto const& [k, v] : delta)
         {
-            assert(
-                (v.first && !v.second) ||
-                (v.second && !v.first));
+            assert((v.first && !v.second) || (v.second && !v.first));
 
             ret[k] = static_cast<bool>(v.first);
         }
@@ -190,5 +188,5 @@ public:
     //! The SHAMap representing the transactions.
     std::shared_ptr<SHAMap> map_;
 };
-}
+}  // namespace ripple
 #endif

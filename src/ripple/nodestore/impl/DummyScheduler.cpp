@@ -23,26 +23,21 @@ namespace ripple {
 namespace NodeStore {
 
 void
-DummyScheduler::scheduleTask (Task& task)
+DummyScheduler::scheduleTask(Task& task)
 {
     // Invoke the task synchronously.
     task.performScheduledTask();
 }
 
 void
-DummyScheduler::scheduledTasksStopped ()
+DummyScheduler::onFetch(const FetchReport& report)
 {
 }
 
 void
-DummyScheduler::onFetch (const FetchReport& report)
+DummyScheduler::onBatchWrite(const BatchWriteReport& report)
 {
 }
 
-void
-DummyScheduler::onBatchWrite (const BatchWriteReport& report)
-{
-}
-
-}
-}
+}  // namespace NodeStore
+}  // namespace ripple

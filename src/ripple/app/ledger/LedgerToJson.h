@@ -23,20 +23,22 @@
 #include <ripple/app/ledger/Ledger.h>
 #include <ripple/app/misc/TxQ.h>
 #include <ripple/basics/StringUtilities.h>
-#include <ripple/protocol/jss.h>
-#include <ripple/protocol/STTx.h>
 #include <ripple/json/Object.h>
+#include <ripple/protocol/STTx.h>
+#include <ripple/protocol/jss.h>
+#include <ripple/rpc/Context.h>
 
 namespace ripple {
 
 struct LedgerFill
 {
-    LedgerFill (ReadView const& l, int o = 0, std::vector<TxQ::TxDetails> q = {},
-                LedgerEntryType t = ltINVALID)
-        : ledger (l)
-        , options (o)
-        , txQueue(std::move(q))
-        , type (t)
+    LedgerFill(
+        ReadView const& l,
+        RPC::Context* ctx,
+        int o = 0,
+        std::vector<TxQ::TxDetails> q = {},
+        LedgerEntryType t = ltINVALID)
+        : ledger(l), options(o), txQueue(std::move(q)), type(t), context(ctx)
     {
     }
 
@@ -54,20 +56,24 @@ struct LedgerFill
     int options;
     std::vector<TxQ::TxDetails> txQueue;
     LedgerEntryType type;
+    RPC::Context* context;
 };
 
 /** Given a Ledger and options, fill a Json::Object or Json::Value with a
     description of the ledger.
  */
 
-void addJson(Json::Value&, LedgerFill const&);
+void
+addJson(Json::Value&, LedgerFill const&);
 
 /** Return a new Json::Value representing the ledger with given options.*/
-Json::Value getJson (LedgerFill const&);
+Json::Value
+getJson(LedgerFill const&);
 
 /** Serialize an object to a blob. */
 template <class Object>
-Blob serializeBlob(Object const& o)
+Blob
+serializeBlob(Object const& o)
 {
     Serializer s;
     o.add(s);
@@ -75,11 +81,11 @@ Blob serializeBlob(Object const& o)
 }
 
 /** Serialize an object to a hex string. */
-inline
-std::string serializeHex(STObject const& o)
+inline std::string
+serializeHex(STObject const& o)
 {
     return strHex(serializeBlob(o));
 }
-} // ripple
+}  // namespace ripple
 
 #endif

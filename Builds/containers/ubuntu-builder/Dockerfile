@@ -1,4 +1,4 @@
-ARG DIST_TAG=16.04
+ARG DIST_TAG=18.04
 FROM ubuntu:$DIST_TAG
 ARG GIT_COMMIT=unknown
 ARG CI_USE=false
@@ -15,8 +15,8 @@ RUN chmod +x /tmp/ubuntu_setup.sh && \
     chmod +x /tmp/install_cmake.sh
 RUN /tmp/ubuntu_setup.sh
 
-RUN /tmp/install_cmake.sh 3.15.2 /opt/local/cmake-3.15
-RUN ln -s /opt/local/cmake-3.15 /opt/local/cmake
+RUN /tmp/install_cmake.sh 3.16.1 /opt/local/cmake-3.16
+RUN ln -s /opt/local/cmake-3.16 /opt/local/cmake
 ENV PATH="/opt/local/cmake/bin:$PATH"
 # also install min supported cmake for testing
 RUN if [ "${CI_USE}" = true ] ; then /tmp/install_cmake.sh 3.9.0 /opt/local/cmake-3.9; fi
@@ -27,15 +27,10 @@ ENV BOOST_ROOT="/opt/local/boost/_INSTALLED_"
 ENV OPENSSL_ROOT="/opt/local/openssl"
 
 # prep files for package building
-RUN mkdir -m 777 -p /opt/rippled_bld/pkg
+RUN mkdir -m 777 -p /opt/rippled_bld/pkg/debian
+RUN update-alternatives --set gcc /usr/bin/gcc-8
 WORKDIR /opt/rippled_bld/pkg
 
-COPY packaging/dpkg/debian /opt/rippled_bld/pkg/debian/
-COPY shared/update_sources.sh ./
-COPY shared/rippled.service /opt/rippled_bld/pkg/debian/
-
 COPY packaging/dpkg/build_dpkg.sh ./
-RUN update-alternatives --set gcc /usr/bin/gcc-8
-
 CMD ./build_dpkg.sh
 

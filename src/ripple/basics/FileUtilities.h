@@ -20,20 +20,25 @@
 #ifndef RIPPLE_BASICS_FILEUTILITIES_H_INCLUDED
 #define RIPPLE_BASICS_FILEUTILITIES_H_INCLUDED
 
-#include <boost/system/error_code.hpp>
 #include <boost/filesystem.hpp>
-#include <boost/optional.hpp>
+#include <boost/system/error_code.hpp>
 
-namespace ripple
-{
+#include <optional>
 
-// TODO: Should this one function have its own file, or can it
-// be absorbed somewhere else?
+namespace ripple {
 
-std::string getFileContents(boost::system::error_code& ec,
+std::string
+getFileContents(
+    boost::system::error_code& ec,
     boost::filesystem::path const& sourcePath,
-    boost::optional<std::size_t> maxSize = boost::none);
+    std::optional<std::size_t> maxSize = std::nullopt);
 
-}
+void
+writeFileContents(
+    boost::system::error_code& ec,
+    boost::filesystem::path const& destPath,
+    std::string const& contents);
+
+}  // namespace ripple
 
 #endif
