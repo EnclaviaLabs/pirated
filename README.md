@@ -1,5 +1,20 @@
 # The XRP Ledger
 
+
+export BOOST_ROOT=/Users/error/github/boost_1_71_0/
+cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Debug ..
+
+rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh
+snoPBrXtMeMyMHUVTgbuqAfg1SUTb
+
+// GENESIS
+sudo ./rippled -a --start --conf=/etc/opt/ripple/rippled.cfg
+
+// CONTINUE
+./rippled ledger_accept --conf=/etc/opt/ripple/rippled.cfg
+
+
+
 The [XRP Ledger](https://xrpl.org/) is a decentralized cryptographic ledger powered by a network of peer-to-peer servers. The XRP Ledger uses a novel Byzantine Fault Tolerant consensus algorithm to settle and record transactions in a secure distributed database without a central operator.
 
 ## XRP
